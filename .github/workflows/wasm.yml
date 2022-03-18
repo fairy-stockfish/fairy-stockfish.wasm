@@ -12,11 +12,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
-    - uses: mymindstorm/setup-emsdk@v6
+    - uses: actions/checkout@v3
+    - uses: mymindstorm/setup-emsdk@v11
       with:
         version: 1.39.16
     - name: make wasm
       run: |
-        cd src
-        make ARCH=wasm build
+        yarn prepare
+    - uses: actions/upload-artifact@v3
+      with:
+        name: fairy-stockfish.wasm
+        path: stockfish.*
