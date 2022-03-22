@@ -3,7 +3,7 @@
 this_dir=$(dirname "${BASH_SOURCE[0]}")
 
 n=${n:-20}
-bench_command=${bench_command:-"bench 128 2 15 current depth NNUE"}
+bench_command=${bench_command:-"bench xiangqi 128 2 15 default depth NNUE"}
 nps_target=${nps_target:-"100000"}
 
 echo -n "Running 0/$n ... "

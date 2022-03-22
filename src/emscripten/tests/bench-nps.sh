@@ -11,7 +11,7 @@ nps_target=${nps_target:-200000}
 # Hash = 128MB
 # Threads = 1
 # Depth = 22
-bench_command=${bench_command:-"bench 128 1 22 current depth NNUE"}
+bench_command=${bench_command:-"bench xiangqi 128 1 22 current depth NNUE"}
 
 echo -n "Running bench ... "
 
