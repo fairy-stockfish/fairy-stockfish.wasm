@@ -94,7 +94,7 @@ endif
 
 
 ### 2.1. General and architecture defaults
-largeboards = no
+largeboards = yes
 all = no
 precomputedmagics = yes
 nnue = yes
@@ -838,7 +838,7 @@ net:
         fi;
 	$(eval shasum_command := $(shell if hash shasum 2>/dev/null; then echo "shasum -a 256 "; elif hash sha256sum 2>/dev/null; then echo "sha256sum "; fi))
 	@if [ "x$(shasum_command)" != "x" ]; then \
-	    if [ "$(nnuenet)" != "nn-"`$(shasum_command) $(nnuenet) | cut -c1-12`".nnue" ]; then \
+	    if [ "$(nnuenet)" != "xiangqi-"`$(shasum_command) $(nnuenet) | cut -c1-12`".nnue" ]; then \
                 echo "Failed download or $(nnuenet) corrupted, please delete!"; exit 1; \
             fi \
          else \
