@@ -57,7 +57,7 @@ jobs:
       - name: Test bench NPS (Browser)
         if: ${{ matrix.wasm_simd == 'yes' }}
         run: >
-          docker-compose run -e uci_exe="node public/uci-puppeteer.js" -e nps_target=250000 browser
+          docker-compose run -e uci_exe="node public/uci-puppeteer.js" -e nps_target=100000 browser
           bash tests/bench-nps.sh
 
       - name: Test stress (Node)
