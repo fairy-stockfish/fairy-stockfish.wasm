@@ -1,6 +1,6 @@
 {
   "name": "fairy-stockfish-nnue.wasm",
-  "version": "1.0.0",
+  "version": "1.0.0-bookgen.1",
   "description": "WebAssembly port of Fairy-Stockfish with NNUE support, optimized via WASM SIMD",
   "author": "Fabian Fichter",
   "license": "GPL-3.0",

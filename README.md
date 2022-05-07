@@ -3,17 +3,15 @@
 [![npm version](https://badge.fury.io/js/fairy-stockfish-nnue.wasm.svg)](https://badge.fury.io/js/fairy-stockfish-nnue.wasm)
 [![CI](https://github.com/ianfab/fairy-stockfish.wasm/actions/workflows/ci.yml/badge.svg)](https://github.com/ianfab/fairy-stockfish.wasm/actions/workflows/ci.yml)
 
-WebAssembly port of [Fairy-Stockfish](https://github.com/ianfab/Fairy-Stockfish) with NNUE support, currently used by [pychess.org](https://www.pychess.org) for client-side analysis.
+WebAssembly port of [bookgen](https://github.com/ianfab/bookgen) with NNUE support.
 
-See [fairy-stockfish-nnue-wasm-demo](https://github.com/ianfab/fairy-stockfish-nnue-wasm-demo) for a demo.
+See [bookgen-wasm](https://github.com/ianfab/bookgen-wasm) for a demo.
 
 For development, see [`src/emscripten/README.md`](src/emscripten/README.md).
 
-Current default branch is `nnue`.
-
 The original `README.md` follows below.
 
-# Fairy-Stockfish
+# bookgen
 
 Bookgen extends Fairy-Stockfish by the possibility of automatically generating opening books for all supported chess variants, including Chess, Xiangqi, Shogi, Crazyhouse, Antichess, Atomic, etc.
 
