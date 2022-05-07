@@ -21,7 +21,9 @@
 #include <cmath>
 #include <iostream>
 #include <sstream>
+#include <fstream>
 #include <string>
+#include <set>
 
 #include "evaluate.h"
 #include "movegen.h"
@@ -179,6 +181,176 @@ namespace {
     Threads.start_thinking(pos, states, limits, ponderMode);
   }
 
+  void multipv_gen(Position& pos, Search::LimitsType limits, Depth depth, set<string>& fens, Value range) {
+
+    limits.startTime = now();
+    StateListPtr states(new std::deque<StateInfo>(1));
+    Position newpos;
+    newpos.set(variants.find(Options["UCI_Variant"])->second, pos.fen(), Options["UCI_Chess960"], &states->back(), Threads.main());
+    Threads.start_thinking(newpos, states, limits);
+    Threads.main()->wait_for_search_finished();
+
+    vector<Move> good_moves;
+
+    const Search::RootMoves& rootMoves = pos.this_thread()->rootMoves;
+    size_t PVIdx = pos.this_thread()->pvIdx;
+    size_t multiPV = std::min((size_t)Options["MultiPV"], rootMoves.size());
+    Value bias = int(Options["AbsScoreBias"]) * PawnValueEg / 100;
+    bool abs_move_score = Options["AbsMoveScore"];
+
+    Value v0;
+
+    for (size_t i = 0; i < multiPV; ++i)
+    {
+        bool updated = (i <= PVIdx);
+
+        Value v = updated ? rootMoves[i].score : rootMoves[i].previousScore;
+        if (i == 0)
+            v0 = v;
+
+        if (abs_move_score ? std::abs((pos.side_to_move() == WHITE? v : -v) - bias) <= range
+                           : v0 - v <= range)
+            good_moves.push_back(rootMoves[i].pv[0]);
+    }
+
+    for (Move m : good_moves)
+    {
+        StateInfo st;
+        pos.do_move(m, st);
+        if (depth <= 1)
+        {
+            string fen = pos.fen();
+            if (Options["TrimFEN"])
+                fen.erase(fen.rfind(" ", fen.rfind(" ") - 1));
+            fens.insert(fen);
+        }
+        else
+            multipv_gen(pos, limits, depth - 1, fens, range * int(Options["DepthFactor"]) / 100);
+        pos.undo_move(m);
+    }
+
+  }
+
+  uint64_t perft_gen(Position& pos, Depth depth, set<string>& fens) {
+
+    StateInfo st;
+    uint64_t nodes = 0;
+
+    if (depth < 1)
+    {
+        string fen = pos.fen();
+        if (Options["TrimFEN"])
+            fen.erase(fen.rfind(" ", fen.rfind(" ") - 1));
+        fens.insert(fen);
+        return ++nodes;
+    }
+
+    for (const auto& m : MoveList<LEGAL>(pos))
+    {
+        pos.do_move(m, st);
+        nodes += perft_gen(pos, depth - 1, fens);
+        pos.undo_move(m);
+    }
+    return nodes;
+  }
+
+  void generate(Position& pos, istringstream& is, set<string>& fens) {
+
+    Search::LimitsType limits;
+    string token;
+
+    int depth;
+    is >> depth;
+
+    while (is >> token)
+        if (token == "depth")          is >> limits.depth;
+        else if (token == "nodes")     is >> limits.nodes;
+        else if (token == "movetime")  is >> limits.movetime;
+        else if (token == "perft")     limits.perft = depth;
+
+    if (limits.perft)
+        perft_gen(pos, limits.perft, fens);
+    else
+        multipv_gen(pos, limits, depth, fens, int(Options["MoveScoreRange"]) * PawnValueEg / 100);
+
+  }
+
+  void filter(istringstream& is, set<string>& fens) {
+
+    Search::LimitsType limits;
+    string token;
+
+    while (is >> token)
+        if (token == "depth")          is >> limits.depth;
+        else if (token == "nodes")     is >> limits.nodes;
+        else if (token == "movetime")  is >> limits.movetime;
+
+    StateListPtr states;
+    Position pos;
+    set<string> filtered_fens;
+
+    Value range         = int(Options["MoveScoreRange"]) * PawnValueEg / 100;
+    Value abs_range     = int(Options["AbsScoreRange"])  * PawnValueEg / 100;
+    Value bias          = int(Options["AbsScoreBias"])   * PawnValueEg / 100;
+    bool abs_move_score = int(Options["AbsMoveScore"]);
+
+    for (const auto& fen : fens)
+    {
+        limits.startTime = now();
+        states = StateListPtr(new std::deque<StateInfo>(1));
+        pos.set(variants.find(Options["UCI_Variant"])->second, fen, Options["UCI_Chess960"], &states->back(), Threads.main());
+        Threads.start_thinking(pos, states, limits);
+        Threads.main()->wait_for_search_finished();
+
+        const Search::RootMoves& rootMoves = pos.this_thread()->rootMoves;
+        size_t PVIdx = pos.this_thread()->pvIdx;
+        size_t multiPV = std::min((size_t)Options["MultiPV"], rootMoves.size());
+
+
+        Value v, v0;
+        bool exclude = false;
+
+        for (size_t i = 0; i < multiPV; ++i)
+        {
+            bool updated = (i <= PVIdx);
+
+            v = updated ? rootMoves[i].score : rootMoves[i].previousScore;
+            if (i == 0)
+            {
+                if (std::abs((pos.side_to_move() == WHITE? v : -v) - bias) > abs_range)
+                {
+                    exclude = true;
+                    break;
+                }
+                v0 = v;
+            }
+            else if (abs_move_score ? std::abs((pos.side_to_move() == WHITE? v : -v) - bias) > range
+                                    : v0 - v > range)
+            {
+                exclude = true;
+                break;
+            }
+        }
+
+        if (exclude)
+            continue;
+
+        filtered_fens.insert(fen);
+    }
+    fens = filtered_fens;
+  }
+
+  void print(set<string>& fens) {
+    for (const auto& fen : fens)
+        sync_cout << fen << sync_endl;
+  }
+
+  void save(set<string>& fens) {
+    ofstream file(Options["EPDPath"]);
+    for (const auto& fen : fens)
+        file << fen << endl;
+  }
+
   // bench() is called when engine receives the "bench" command. Firstly
   // a list of UCI commands is setup according to bench parameters, then
   // it is run one by one printing a summary at the end.
@@ -310,6 +482,7 @@ void UCI::loop(int argc, char* argv[]) {
   Position pos;
   string token, cmd;
   StateListPtr states(new std::deque<StateInfo>(1));
+  set<string> fens;
 
   assert(variants.find(Options["UCI_Variant"])->second != nullptr);
   pos.set(variants.find(Options["UCI_Variant"])->second, variants.find(Options["UCI_Variant"])->second->startFen, false, &states->back(), Threads.main());
@@ -383,6 +556,14 @@ void UCI::loop(int argc, char* argv[]) {
 
       else if (Options["Protocol"] == "xboard")
           XBoard::stateMachine->process_command(token, is);
+
+      // Book generation commands
+      else if (token == "generate")   generate(pos, is, fens);
+      else if (token == "filter")     filter(is, fens);
+      else if (token == "clear")      fens.clear();
+      else if (token == "size")       sync_cout << fens.size() << sync_endl;
+      else if (token == "print")      print(fens);
+      else if (token == "save")       save(fens);
 
       else if (token == "setoption")  setoption(is);
       // UCCI-specific banmoves command

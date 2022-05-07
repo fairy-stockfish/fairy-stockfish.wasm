@@ -17,15 +17,15 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: make
-        run: cd src && make clean && make -j build COMP=mingw ARCH=${{ matrix.arch }} EXE=fairy-stockfish_${{ matrix.arch }}.exe && strip fairy-stockfish_${{ matrix.arch }}.exe
+        run: cd src && make clean && make -j build COMP=mingw ARCH=${{ matrix.arch }} EXE=bookgen_${{ matrix.arch }}.exe && strip bookgen_${{ matrix.arch }}.exe
 
       - name: make largeboards
-        run: cd src && make clean && make -j build COMP=mingw ARCH=${{ matrix.arch }} EXE=fairy-stockfish-largeboards_${{ matrix.arch }}.exe largeboards=yes && strip fairy-stockfish-largeboards_${{ matrix.arch }}.exe
+        run: cd src && make clean && make -j build COMP=mingw ARCH=${{ matrix.arch }} EXE=bookgen-largeboards_${{ matrix.arch }}.exe largeboards=yes && strip bookgen-largeboards_${{ matrix.arch }}.exe
 
       - uses: actions/upload-artifact@v3
         with:
-          name: fairy-stockfish
-          path: src/fairy-stockfish*.exe
+          name: bookgen
+          path: src/bookgen*.exe
 
   linux:
     strategy:
@@ -37,12 +37,12 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: make
-        run: cd src && make clean && make -j build COMP=gcc ARCH=${{ matrix.arch }} EXE=fairy-stockfish_${{ matrix.arch }} && strip fairy-stockfish_${{ matrix.arch }}
+        run: cd src && make clean && make -j build COMP=gcc ARCH=${{ matrix.arch }} EXE=bookgen_${{ matrix.arch }} && strip bookgen_${{ matrix.arch }}
 
       - name: make largeboards
-        run: cd src && make clean && make -j build COMP=gcc ARCH=${{ matrix.arch }} EXE=fairy-stockfish-largeboards_${{ matrix.arch }} largeboards=yes && strip fairy-stockfish-largeboards_${{ matrix.arch }}
+        run: cd src && make clean && make -j build COMP=gcc ARCH=${{ matrix.arch }} EXE=bookgen-largeboards_${{ matrix.arch }} largeboards=yes && strip bookgen-largeboards_${{ matrix.arch }}
 
       - uses: actions/upload-artifact@v3
         with:
-          name: fairy-stockfish
-          path: src/fairy-stockfish*
+          name: bookgen
+          path: src/bookgen*
