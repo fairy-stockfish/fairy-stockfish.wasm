@@ -10,7 +10,6 @@ wasm_simd = yes
 embedded_nnue = yes
 minify_js = yes
 assertion = no
-all = yes
 
 VPATH := $(VPATH):emscripten
 EM_CXXFLAGS +=
