@@ -352,7 +352,7 @@ ifeq ($(nnue),no)
 	CXXFLAGS += -DNNUE_EMBEDDING_OFF
 endif
 
-# Enable all variants, even heavyweight ones like amazons
+# Enable all variants, even heavyweight ones like duck and amazons
 ifneq ($(all),no)
 	CXXFLAGS += -DALLVARS
 endif
@@ -575,7 +575,7 @@ endif
 ifeq ($(avx2),yes)
 	CXXFLAGS += -DUSE_AVX2
 	ifeq ($(comp),$(filter $(comp),gcc clang mingw))
-		CXXFLAGS += -mavx2
+		CXXFLAGS += -mavx2 -mbmi
 	endif
 endif
 

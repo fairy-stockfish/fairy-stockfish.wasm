@@ -86,7 +86,7 @@ ffish['onRuntimeInitialized'] = () => {
 }
 ```
 
-Set a custom fen position including fen validiation:
+Set a custom fen position including fen validation:
 ```javascript
 fen = "rnb1kbnr/ppp1pppp/8/3q4/8/8/PPPP1PPP/RNBQKBNR w KQkq - 0 3";
 if (ffish.validateFen(fen) == 1) {  // ffish.validateFen(fen) can return different error codes, it returns 1 for FEN_OK
@@ -229,7 +229,7 @@ let configFilePath = './variants.ini';
 
 For an example of each available function see [test.js](https://github.com/ianfab/Fairy-Stockfish/blob/master/tests/js/test.js).
 
-## Build instuctions
+## Build instructions
 
 It is built using emscripten/Embind from C++ source code.
 
@@ -287,4 +287,4 @@ A simple toy website which demonstrates the core functionality of ffish.js and [
 
 Source code: https://github.com/thearst3rd/ffish-test
 
-See it deployed at: https://ffish-test.herokuapp.com
+See it deployed at: https://thearst3rd.github.io/ffish-test/

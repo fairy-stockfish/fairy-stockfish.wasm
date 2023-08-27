@@ -80,7 +80,7 @@ namespace {
   }
 
   int futility_move_count(bool improving, Depth depth, const Position& pos) {
-    return (3 + depth * depth + 2 * pos.blast_on_capture()) / (2 - improving + pos.blast_on_capture());
+    return (3 + depth * depth * (1 + pos.wall_gating()) + 2 * pos.blast_on_capture()) / (2 - improving + pos.blast_on_capture());
   }
 
   // History and stats update bonus, based on depth
@@ -190,14 +190,14 @@ void MainThread::search() {
 
   Eval::NNUE::verify();
 
-  if (rootMoves.empty() || (Options["Protocol"] == "xboard" && rootPos.is_optional_game_end()))
+  if (rootMoves.empty() || (CurrentProtocol == XBOARD && rootPos.is_optional_game_end()))
   {
       rootMoves.emplace_back(MOVE_NONE);
       Value variantResult;
       Value result =  rootPos.is_game_end(variantResult) ? variantResult
                     : rootPos.checkers()                 ? rootPos.checkmate_value()
                                                          : rootPos.stalemate_value();
-      if (Options["Protocol"] == "xboard")
+      if (CurrentProtocol == XBOARD)
       {
           // rotate MOVE_NONE to front (for optional game end)
           std::rotate(rootMoves.rbegin(), rootMoves.rbegin() + 1, rootMoves.rend());
@@ -218,7 +218,7 @@ void MainThread::search() {
   }
 
   // Sit in bughouse variants if partner requested it or we are dead
-  if (rootPos.two_boards() && !Threads.abort && Options["Protocol"] == "xboard")
+  if (rootPos.two_boards() && !Threads.abort && CurrentProtocol == XBOARD)
   {
       while (!Threads.stop && (Partner.sitRequested || (Partner.weDead && !Partner.partnerDead)) && Time.elapsed() < Limits.time[us] - 1000)
       {}
@@ -259,7 +259,7 @@ void MainThread::search() {
   if (bestThread != this)
       sync_cout << UCI::pv(bestThread->rootPos, bestThread->completedDepth, -VALUE_INFINITE, VALUE_INFINITE) << sync_endl;
 
-  if (Options["Protocol"] == "xboard")
+  if (CurrentProtocol == XBOARD)
   {
       Move bestMove = bestThread->rootMoves[0].pv[0];
       // Wait for virtual drop to become real
@@ -280,7 +280,14 @@ void MainThread::search() {
       // Send move only when not in analyze mode and not at game end
       if (!Limits.infinite && !ponder && rootMoves[0].pv[0] != MOVE_NONE && !Threads.abort.exchange(true))
       {
-          sync_cout << "move " << UCI::move(rootPos, bestMove) << sync_endl;
+          std::string move = UCI::move(rootPos, bestMove);
+          if (rootPos.wall_gating())
+          {
+              sync_cout << "move " << move.substr(0, move.find(",")) << "," << sync_endl;
+              sync_cout << "move " << move.substr(move.find(",") + 1) << sync_endl;
+          }
+          else
+              sync_cout << "move " << UCI::move(rootPos, bestMove) << sync_endl;
           if (XBoard::stateMachine->moveAfterSearch)
           {
               XBoard::stateMachine->do_move(bestMove);
@@ -539,7 +546,7 @@ void Thread::search() {
               totalTime = std::min(500.0, totalTime);
 
           // Update partner in bughouse variants
-          if (completedDepth >= 8 && rootPos.two_boards() && Options["Protocol"] == "xboard")
+          if (completedDepth >= 8 && rootPos.two_boards() && CurrentProtocol == XBOARD)
           {
               // Communicate clock times relevant for sitting decisions
               if (Limits.time[us])
@@ -793,6 +800,8 @@ namespace {
             {
                 int penalty = -stat_bonus(depth);
                 thisThread->mainHistory[us][from_to(ttMove)] << penalty;
+                if (pos.wall_gating())
+                    thisThread->gateHistory[us][gating_square(ttMove)] << penalty;
                 update_continuation_histories(ss, pos.moved_piece(ttMove), to_sq(ttMove), penalty);
             }
         }
@@ -927,7 +936,7 @@ namespace {
         && (ss-1)->statScore < 23767
         &&  eval >= beta
         &&  eval >= ss->staticEval
-        &&  ss->staticEval >= beta - 20 * depth - 22 * improving + 168 * ss->ttPv + 159 + 200 * (!pos.double_step_enabled() && pos.piece_to_char()[PAWN] != ' ')
+        &&  ss->staticEval >= beta - 20 * depth - 22 * improving + 168 * ss->ttPv + 159 + 200 * (!pos.double_step_region(pos.side_to_move()) && (pos.piece_types() & PAWN))
         && !excludedMove
         &&  pos.non_pawn_material(us)
         &&  pos.count<ALL_PIECES>(~us) != pos.count<PAWN>(~us)
@@ -973,7 +982,7 @@ namespace {
         }
     }
 
-    probCutBeta = beta + (209 + 20 * !!pos.capture_the_flag_piece() + 50 * pos.captures_to_hand()) * (1 + pos.check_counting() + pos.extinction_single_piece()) - 44 * improving;
+    probCutBeta = beta + (209 + 20 * !!pos.flag_region(~pos.side_to_move()) + 50 * pos.captures_to_hand()) * (1 + pos.check_counting() + pos.extinction_single_piece()) - 44 * improving;
 
     // Step 9. ProbCut (~4 Elo)
     // If we have a good enough capture and a reduced search returns a value
@@ -992,7 +1001,7 @@ namespace {
     {
         assert(probCutBeta < VALUE_INFINITE);
 
-        MovePicker mp(pos, ttMove, probCutBeta - ss->staticEval, &captureHistory);
+        MovePicker mp(pos, ttMove, probCutBeta - ss->staticEval, &thisThread->gateHistory, &captureHistory);
         int probCutCount = 0;
         bool ttPv = ss->ttPv;
         ss->ttPv = false;
@@ -1071,6 +1080,7 @@ moves_loop: // When in check, search starts from here
     Move countermove = thisThread->counterMoves[pos.piece_on(prevSq)][prevSq];
 
     MovePicker mp(pos, ttMove, depth, &thisThread->mainHistory,
+                                      &thisThread->gateHistory,
                                       &thisThread->lowPlyHistory,
                                       &captureHistory,
                                       contHist,
@@ -1112,7 +1122,7 @@ moves_loop: // When in check, search starts from here
 
       ss->moveCount = ++moveCount;
 
-      if (rootNode && thisThread == Threads.main() && Time.elapsed() > 3000 && Options["Protocol"] != "xboard")
+      if (rootNode && thisThread == Threads.main() && Time.elapsed() > 3000 && is_uci_dialect(CurrentProtocol))
           sync_cout << "info depth " << depth
                     << " currmove " << UCI::move(pos, move)
                     << " currmovenumber " << moveCount + thisThread->pvIdx << sync_endl;
@@ -1175,7 +1185,7 @@ moves_loop: // When in check, search starts from here
                   continue;
 
               // Prune moves with negative SEE (~20 Elo)
-              if (!pos.see_ge(move, Value(-(30 - std::min(lmrDepth, 18) + 10 * !!pos.capture_the_flag_piece()) * lmrDepth * lmrDepth)))
+              if (!pos.variant()->duckGating && !pos.see_ge(move, Value(-(30 - std::min(lmrDepth, 18) + 10 * !!pos.flag_region(pos.side_to_move())) * lmrDepth * lmrDepth)))
                   continue;
           }
       }
@@ -1315,6 +1325,7 @@ moves_loop: // When in check, search starts from here
                   r++;
 
               ss->statScore =  thisThread->mainHistory[us][from_to(move)]
+                             + thisThread->gateHistory[us][gating_square(move)] * 2
                              + (*contHist[0])[history_slot(movedPiece)][to_sq(move)]
                              + (*contHist[1])[history_slot(movedPiece)][to_sq(move)]
                              + (*contHist[3])[history_slot(movedPiece)][to_sq(move)]
@@ -1615,6 +1626,7 @@ moves_loop: // When in check, search starts from here
     // queen promotions, and other checks (only if depth >= DEPTH_QS_CHECKS)
     // will be generated.
     MovePicker mp(pos, ttMove, depth, &thisThread->mainHistory,
+                                      &thisThread->gateHistory,
                                       &thisThread->captureHistory,
                                       contHist,
                                       to_sq((ss-1)->currentMove));
@@ -1634,7 +1646,7 @@ moves_loop: // When in check, search starts from here
           && !givesCheck
           && !(   pos.extinction_value() == -VALUE_MATE
                && pos.piece_on(to_sq(move))
-               && pos.extinction_piece_types().find(type_of(pos.piece_on(to_sq(move)))) != pos.extinction_piece_types().end())
+               && (pos.extinction_piece_types() & type_of(pos.piece_on(to_sq(move)))))
           &&  futilityBase > -VALUE_KNOWN_WIN
           &&  type_of(move) != PROMOTION)
       {
@@ -1811,13 +1823,20 @@ moves_loop: // When in check, search starts from here
         // Decrease stats for all non-best quiet moves
         for (int i = 0; i < quietCount; ++i)
         {
-            thisThread->mainHistory[us][from_to(quietsSearched[i])] << -bonus2;
+            if (!(pos.wall_gating() && from_to(quietsSearched[i]) == from_to(bestMove)))
+                thisThread->mainHistory[us][from_to(quietsSearched[i])] << -bonus2;
+            if (pos.wall_gating())
+                thisThread->gateHistory[us][gating_square(quietsSearched[i])] << -bonus2;
             update_continuation_histories(ss, pos.moved_piece(quietsSearched[i]), to_sq(quietsSearched[i]), -bonus2);
         }
     }
     else
+    {
         // Increase stats for the best move in case it was a capture move
         captureHistory[moved_piece][to_sq(bestMove)][captured] << bonus1;
+        if (pos.wall_gating())
+            thisThread->gateHistory[us][gating_square(bestMove)] << bonus1;
+    }
 
     // Extra penalty for a quiet early move that was not a TT move or
     // main killer move in previous ply when it gets refuted.
@@ -1830,7 +1849,10 @@ moves_loop: // When in check, search starts from here
     {
         moved_piece = pos.moved_piece(capturesSearched[i]);
         captured = type_of(pos.piece_on(to_sq(capturesSearched[i])));
-        captureHistory[moved_piece][to_sq(capturesSearched[i])][captured] << -bonus1;
+        if (!(pos.wall_gating() && from_to(capturesSearched[i]) == from_to(bestMove)))
+            captureHistory[moved_piece][to_sq(capturesSearched[i])][captured] << -bonus1;
+        if (pos.wall_gating())
+            thisThread->gateHistory[us][gating_square(capturesSearched[i])] << -bonus1;
     }
   }
 
@@ -1865,6 +1887,8 @@ moves_loop: // When in check, search starts from here
     Color us = pos.side_to_move();
     Thread* thisThread = pos.this_thread();
     thisThread->mainHistory[us][from_to(move)] << bonus;
+    if (pos.wall_gating())
+        thisThread->gateHistory[us][gating_square(move)] << bonus;
     update_continuation_histories(ss, pos.moved_piece(move), to_sq(move), bonus);
 
     // Penalty for reversed move in case of moved piece not being a pawn
@@ -1993,7 +2017,7 @@ string UCI::pv(const Position& pos, Depth depth, Value alpha, Value beta) {
       if (ss.rdbuf()->in_avail()) // Not at first line
           ss << "\n";
 
-      if (Options["Protocol"] == "xboard")
+      if (CurrentProtocol == XBOARD)
       {
           ss << d << " "
              << UCI::value(v) << " "

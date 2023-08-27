@@ -175,6 +175,10 @@ public:
     return this->pos.fen();
   }
 
+  std::string fen(bool showPromoted) const {
+    return this->pos.fen(false, showPromoted);
+  }
+
   std::string fen(bool showPromoted, int countStarted) const {
     return this->pos.fen(false, showPromoted, countStarted);
   }
@@ -324,12 +328,28 @@ public:
       return "0-1";
   }
 
+  std::string checked_pieces() const {
+    Bitboard checked = Stockfish::checked(pos);
+    std::string squares;
+    while (checked) {
+      Square sr = pop_lsb(checked);
+      squares += UCI::square(pos, sr);
+      squares += DELIM;
+    }
+    save_pop_back(squares);
+    return squares;
+  }
+
   bool is_check() const {
-    return Stockfish::is_check(pos);
+    return Stockfish::checked(pos);
   }
 
   bool is_bikjang() const {
     return pos.bikjang();
+  }
+
+  bool is_capture(std::string uciMove) const {
+    return pos.capture(UCI::to_move(pos, uciMove));
   }
 
   std::string move_stack() const {
@@ -469,6 +489,11 @@ namespace ffish {
     Board::sfInitialized = true;
   }
 
+  bool captures_to_hand(std::string uciVariant) {
+    const Variant* v = get_variant(uciVariant);
+    return v->capturesToHand;
+  }
+
   std::string starting_fen(std::string uciVariant) {
     const Variant* v = get_variant(uciVariant);
     return v->startFen;
@@ -562,10 +587,14 @@ Game read_game_pgn(std::string pgn) {
         headersParsed = true;
         auto it = game.header.find("Variant");
         if (it != game.header.end()) {
-          game.variant = it->second;
+          game.is960 = it->second.find("960", it->second.size() - 3) != std::string::npos;
+          if (game.is960) {
+            game.variant = it->second.substr(0, it->second.size() - 3);
+          } else {
+            game.variant = it->second;
+          }
           std::transform(game.variant.begin(), game.variant.end(), game.variant.begin(),
           [](unsigned char c){ return std::tolower(c); });
-          game.is960 = it->second.find("960") != std::string::npos;
         }
 
         it = game.header.find("FEN");
@@ -671,6 +700,7 @@ EMSCRIPTEN_BINDINGS(ffish_js) {
     .function("reset", &Board::reset)
     .function("is960", &Board::is_960)
     .function("fen", select_overload<std::string()const>(&Board::fen))
+    .function("fen", select_overload<std::string(bool)const>(&Board::fen))
     .function("fen", select_overload<std::string(bool, int)const>(&Board::fen))
     .function("setFen", &Board::set_fen)
     .function("sanMove", select_overload<std::string(std::string)>(&Board::san_move))
@@ -688,8 +718,10 @@ EMSCRIPTEN_BINDINGS(ffish_js) {
     .function("isGameOver", select_overload<bool(bool) const>(&Board::is_game_over))
     .function("result", select_overload<std::string() const>(&Board::result))
     .function("result", select_overload<std::string(bool) const>(&Board::result))
+    .function("checkedPieces", &Board::checked_pieces)
     .function("isCheck", &Board::is_check)
     .function("isBikjang", &Board::is_bikjang)
+    .function("isCapture", &Board::is_capture)
     .function("moveStack", &Board::move_stack)
     .function("pushMoves", &Board::push_moves)
     .function("pushSanMoves", select_overload<void(std::string)>(&Board::push_san_moves))
@@ -711,7 +743,9 @@ EMSCRIPTEN_BINDINGS(ffish_js) {
     .value("SHOGI_HODGES", NOTATION_SHOGI_HODGES)
     .value("SHOGI_HODGES_NUMBER", NOTATION_SHOGI_HODGES_NUMBER)
     .value("JANGGI", NOTATION_JANGGI)
-    .value("XIANGQI_WXF", NOTATION_XIANGQI_WXF);
+    .value("XIANGQI_WXF", NOTATION_XIANGQI_WXF)
+    .value("THAI_SAN", NOTATION_THAI_SAN)
+    .value("THAI_LAN", NOTATION_THAI_LAN);
   // usage: e.g. ffish.Termination.CHECKMATE
   enum_<Termination>("Termination")
     .value("ONGOING", ONGOING)
@@ -728,6 +762,7 @@ EMSCRIPTEN_BINDINGS(ffish_js) {
   function("readGamePGN", &read_game_pgn);
   function("variants", &ffish::available_variants);
   function("loadVariantConfig", &ffish::load_variant_config);
+  function("capturesToHand", &ffish::captures_to_hand);
   function("startingFen", &ffish::starting_fen);
   function("validateFen", select_overload<int(std::string)>(&ffish::validate_fen));
   function("validateFen", select_overload<int(std::string, std::string)>(&ffish::validate_fen));

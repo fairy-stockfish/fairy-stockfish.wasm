@@ -200,6 +200,14 @@ describe('board.fen()', function () {
   });
 });
 
+describe('board.fen(showPromoted)', function () {
+  it("it returns the current position in fen format. showPromoted makes promoted pieces always followed by the symbol ~ regardless of variant.", () => {
+    let board = new ffish.Board("makruk", "8/6ks/3M~2r1/2K1M3/8/3R4/8/8 w - 128 18 50");
+    chai.expect(board.fen(true)).to.equal("8/6ks/3M~2r1/2K1M3/8/3R4/8/8 w - 128 18 50");
+    chai.expect(board.fen(false)).to.equal("8/6ks/3M2r1/2K1M3/8/3R4/8/8 w - 128 18 50");
+  });
+});
+
 describe('board.fen(showPromoted, countStarted)', function () {
   it("it returns the current position in fen format. showPromoted makes promoted pieces always followed by the symbol ~ regardless of variant. countStarted overwrites the start of makruk's board honor counting.", () => {
     let board = new ffish.Board("makruk", "8/6ks/3M~2r1/2K1M3/8/3R4/8/8 w - 128 18 50");
@@ -466,6 +474,51 @@ describe('board.result()', function () {
   })
 })
 
+describe('board.checkedPieces()', function () {
+  it("it returns the squares of all checked royal pieces in a concatenated string", () => {
+    let board = new ffish.Board();
+    chai.expect(board.checkedPieces()).to.equal("");
+    board.setFen("rnbqkb1r/pppp1Bpp/5n2/4p3/4P3/8/PPPP1PPP/RNBQK1NR b KQkq - 0 3");
+    chai.expect(board.checkedPieces()).to.equal("e8");
+    board.setFen("r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4");
+    board.pushSan("Qxf7#");
+    chai.expect(board.checkedPieces()).to.equal("e8");
+    board.delete();
+
+    board = new ffish.Board("atomic");
+    chai.expect(board.checkedPieces()).to.equal("");
+    board.setFen("rnbqkbnr/ppp1pppp/8/1B1p4/4P3/8/PPPP1PPP/RNBQK1NR b KQkq - 3 2");
+    chai.expect(board.checkedPieces()).to.equal("e8");
+    board.setFen("rnbqkbnr/ppp2ppp/8/8/8/8/PPP2PPP/RNBQKBNR w KQkq - 0 4");
+    board.pushSan("Qd7");
+    chai.expect(board.checkedPieces()).to.equal("e8");
+    board.setFen("8/8/kK6/8/8/8/Q7/8 b - - 0 1")
+    chai.expect(board.checkedPieces()).to.equal("");
+    board.delete();
+
+    board = new ffish.Board("spartan");
+    chai.expect(board.checkedPieces()).to.equal("");
+    board.setFen("lgkcckw1/hhhhhhhh/1N3lN1/8/8/8/PPPPPPPP/R1BQKB1R b KQ - 11 6");
+    chai.expect(board.checkedPieces().split(' ').sort().join()).to.equal("c8,f8");
+    chai.expect(board.isCheck()).to.equal(true);
+    board.setFen("lgkcckwl/hhhhhhhh/6N1/8/8/8/PPPPPPPP/RNBQKB1R b KQ - 5 3")
+    chai.expect(board.checkedPieces()).to.equal("");
+    board.delete();
+
+    board = new ffish.Board("shako");
+    board.setFen("10/5r4/2p3pBk1/1p6Pr/p3p5/9e/1PP2P4/P2P2PP2/ER3K2R1/8C1 w K - 7 38")
+    board.pushMoves("f2h2");
+    chai.expect(board.checkedPieces()).to.equal("i8");
+    board.delete();
+
+    board = new ffish.Board("janggi");
+    board.setFen("4ka3/4a4/9/4R4/2B6/9/9/5K3/4p4/3r5 b - - 0 113")
+    board.pushMoves("e2f2");
+    chai.expect(board.checkedPieces()).to.equal("f3");
+    board.delete();
+  })
+})
+
 describe('board.isCheck()', function () {
   it("it checks if a player is in check", () => {
     let board = new ffish.Board();
@@ -487,8 +540,29 @@ describe('board.isCheck()', function () {
     board.setFen("8/8/kK6/8/8/8/Q7/8 b - - 0 1")
     chai.expect(board.isCheck()).to.equal(false);
     board.delete();
-  });
-});
+
+    board = new ffish.Board("spartan");
+    board.setFen("lgkcckw1/hhhhhhhh/1N3lN1/8/8/8/PPPPPPPP/R1BQKB1R b KQ - 11 6");
+    chai.expect(board.isCheck()).to.equal(true);
+    board.setFen("lgkcckwl/hhhhhhhh/6N1/8/8/8/PPPPPPPP/RNBQKB1R b KQ - 5 3")
+    chai.expect(board.isCheck()).to.equal(false);
+    board.setFen("lgkcckwl/hhhhhhhh/8/8/8/8/PPPPPPPP/RNBQKBNR w KQ - 0 1")
+    chai.expect(board.isCheck()).to.equal(false);
+    board.delete();
+
+    board = new ffish.Board("shako");
+    board.setFen("10/5r4/2p3pBk1/1p6Pr/p3p5/9e/1PP2P4/P2P2PP2/ER3K2R1/8C1 w K - 7 38")
+    board.pushMoves("f2h2");
+    chai.expect(board.isCheck()).to.equal(true);
+    board.delete();
+
+    board = new ffish.Board("janggi");
+    board.setFen("4ka3/4a4/9/4R4/2B6/9/9/5K3/4p4/3r5 b - - 0 113")
+    board.pushMoves("e2f2");
+    chai.expect(board.isCheck()).to.equal(true);
+    board.delete();
+  })
+})
 
 describe('board.isBikjang()', function () {
   it("it checks if a player is in bikjang (only relevant for janggi)", () => {
@@ -496,6 +570,29 @@ describe('board.isBikjang()', function () {
     chai.expect(board.isBikjang()).to.equal(false);
     board.setFen("rnba1abnr/4k4/1c5c1/p1p3p1p/9/9/P1P3P1P/1C5C1/4K4/RNBA1ABNR w - - 0 1");
     chai.expect(board.isBikjang()).to.equal(true);
+    board.delete();
+  });
+});
+
+describe('board.isCapture(move)', function() {
+  it("it checks if a move is a capture", () => {
+    let board = new ffish.Board();
+    chai.expect(board.isCapture("e2e4")).to.equal(false);
+    board.pushMoves("e2e4 e7e5 g1f3 b8c6 f1c4 f8c5");
+    chai.expect(board.isCapture("e1g1")).to.equal(false);
+    board.reset();
+    board.pushMoves("e2e4 g8f6 e4e5 d7d5");
+    chai.expect(board.isCapture("e5f6")).to.equal(true);
+    chai.expect(board.isCapture("e5d6")).to.equal(true);
+    board.delete();
+
+    board = new ffish.Board("chess", "bqrbkrnn/pppppppp/8/8/8/8/PPPPPPPP/BQRBKRNN w CFcf - 0 1", true);
+    board.pushMoves("g1f3 h8g6");
+    chai.expect(board.isCapture("e1f1")).to.equal(false);
+    board.delete();
+
+    board = new ffish.Board("sittuyin", "8/2k5/8/4P3/4P1N1/5K2/8/8[] w - - 0 1");
+    chai.expect(board.isCapture("e5e5f")).to.equal(false);
     board.delete();
   });
 });
@@ -543,7 +640,7 @@ describe('board.pushSanMoves(sanMoves, notation)', function () {
 });
 
 describe('board.pocket(turn)', function () {
-  it("it returns the pocket for the given player as a string with no delimeter. All pieces are returned in lower case.", () => {
+  it("it returns the pocket for the given player as a string with no delimiter. All pieces are returned in lower case.", () => {
     let board = new ffish.Board("crazyhouse", "rnb1kbnr/ppp1pppp/8/8/8/5q2/PPPP1PPP/RNBQKB1R/Pnp w KQkq - 0 4");
     chai.expect(board.pocket(WHITE)).to.equal("p");
     chai.expect(board.pocket(BLACK)).to.equal("np");
@@ -684,6 +781,13 @@ describe('ffish.setOptionBool(name, value)', function () {
   });
 });
 
+describe('ffish.capturesToHand(uciVariant)', function () {
+    it("it checks if the given uci-variant rules contain capturesToHand", () => {
+      chai.expect(ffish.capturesToHand("seirawan")).to.equal(false);
+      chai.expect(ffish.capturesToHand("shouse")).to.equal(true);
+    });
+});
+
 describe('ffish.startingFen(uciVariant)', function () {
     it("it returns the starting fen for the given uci-variant.", () => {
       chai.expect(ffish.startingFen("chess")).to.equal("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
@@ -747,13 +851,14 @@ describe('ffish.validateFen(fen, uciVariant, chess960)', function () {
 describe('ffish.readGamePGN(pgn)', function () {
   it("it reads a pgn string and returns a game object", () => {
      fs = require('fs');
-     let pgnFiles = ['deep_blue_kasparov_1997.pgn', 'lichess_pgn_2018.12.21_JannLee_vs_CrazyAra.j9eQS4TF.pgn', 'c60_ruy_lopez.pgn', 'pychess-variants_zJxHRVm1.pgn', 'Syrov - Dgebuadze.pgn']
+     let pgnFiles = ['deep_blue_kasparov_1997.pgn', 'lichess_pgn_2018.12.21_JannLee_vs_CrazyAra.j9eQS4TF.pgn', 'c60_ruy_lopez.pgn', 'pychess-variants_zJxHRVm1.pgn', 'Syrov - Dgebuadze.pgn', 'pychess-variants_YHEWvfWF.pgn']
 
      let expectedFens = ["1r6/5kp1/RqQb1p1p/1p1PpP2/1Pp1B3/2P4P/6P1/5K2 b - - 14 45",
-                         "3r2kr/2pb1Q2/4ppp1/3pN2p/1P1P4/3PbP2/P1P3PP/6NK[PPqrrbbnn] b - - 1 37",
+                         "3r2kr/2pb1Q2/4ppp1/3pN2p/1P1P4/3PbP2/P1P3PP/6NK[PPqrrbbnn] b - - 0 37",
                          "r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3",
                          "r1bQkb1r/ppp1pppp/2P5/2n2q2/8/2N2N2/PPP2PPP/R1BEKB1R[Hh] b KQCFkqcf - 0 8",
-                         "5rk1/4p3/2p3rR/2p1P3/2Pp1B2/1P1P2P1/2N1n3/6K1 w - - 1 44"]
+                         "5rk1/4p3/2p3rR/2p1P3/2Pp1B2/1P1P2P1/2N1n3/6K1 w - - 1 44",
+                         "r1q3r1/pp3p2/2kN1bp1/8/3P1H2/6P1/PPP2BKP/R2E1R2[h] b acg - 0 20"]
 
      for (let idx = 0; idx < pgnFiles.length; ++idx) {
      let pgnFilePath = pgnDir + pgnFiles[idx];
@@ -764,12 +869,14 @@ describe('ffish.readGamePGN(pgn)', function () {
        }
        let game = ffish.readGamePGN(data);
 
-       const variant = game.headers("Variant").toLowerCase();
-       let board = new ffish.Board(variant);
+       const is960 = game.headers('Variant').endsWith('960');
+       const variant = game.headers('Variant').toLowerCase().replace('960', '');
+       const fen = game.headers('FEN');
+       let board = new ffish.Board(variant, fen, is960);
        const mainlineMoves = game.mainlineMoves().split(" ");
        for (let idx2 = 0; idx2 < mainlineMoves.length; ++idx2) {
            board.push(mainlineMoves[idx2]);
-           chai.expect(ffish.validateFen(board.fen(), variant)).to.equal(1);
+           chai.expect(ffish.validateFen(board.fen(), variant, is960)).to.equal(1);
        }
        chai.expect(board.fen()).to.equal(expectedFens[idx]);
        board.delete();

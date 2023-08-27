@@ -109,7 +109,7 @@ namespace {
 
     is >> token; // Consume "name" token
 
-    if (Options["Protocol"] == "ucci")
+    if (CurrentProtocol == UCCI)
         name = token;
     else
     // Read option name (can contain spaces)
@@ -143,7 +143,7 @@ namespace {
     limits.startTime = now(); // As early as possible!
 
     limits.banmoves = banmoves;
-    bool isUsi = Options["Protocol"] == "usi";
+    bool isUsi = CurrentProtocol == USI;
     int secResolution = Options["usemillisec"] ? 1 : 1000;
 
     while (is >> token)
@@ -533,28 +533,34 @@ void UCI::loop(int argc, char* argv[]) {
       else if (token == "ponderhit")
           Threads.main()->ponder = false; // Switch to normal search
 
-      else if (token == "uci" || token == "usi" || token == "ucci" || token == "xboard")
+      else if (token == "uci" || token == "usi" || token == "ucci" || token == "xboard" || token == "ucicyclone")
       {
-          Options["Protocol"].set_default(token);
+          CurrentProtocol =  token == "uci"  ? (CurrentProtocol == UCI_CYCLONE ? UCI_CYCLONE : UCI_GENERAL)
+                           : token == "ucicyclone" ? UCI_CYCLONE
+                           : token == "usi"  ? USI
+                           : token == "ucci" ? UCCI
+                           : XBOARD;
           string defaultVariant = string(
 #ifdef LARGEBOARDS
-                                           token == "usi"  ? "shogi"
-                                         : token == "ucci" ? "xiangqi"
+                                           CurrentProtocol == USI  ? "shogi"
+                                         : CurrentProtocol == UCCI || CurrentProtocol == UCI_CYCLONE ? "xiangqi"
 #else
-                                           token == "usi"  ? "minishogi"
-                                         : token == "ucci" ? "minixiangqi"
+                                           CurrentProtocol == USI  ? "minishogi"
+                                         : CurrentProtocol == UCCI || CurrentProtocol == UCI_CYCLONE ? "minixiangqi"
 #endif
                                                            : "chess");
           Options["UCI_Variant"].set_default(defaultVariant);
           std::istringstream ss("startpos");
           position(pos, ss, states);
-          if (token == "uci" || token == "usi" || token == "ucci")
+          if (is_uci_dialect(CurrentProtocol) && token != "ucicyclone")
               sync_cout << "id name " << engine_info(true)
                           << "\n" << Options
                           << "\n" << token << "ok"  << sync_endl;
+          // Allow to enforce protocol at startup
+          argc = 1;
       }
 
-      else if (Options["Protocol"] == "xboard")
+      else if (CurrentProtocol == XBOARD)
           XBoard::stateMachine->process_command(token, is);
 
       // Book generation commands
@@ -596,9 +602,9 @@ void UCI::loop(int argc, char* argv[]) {
       else if (token == "fen" || token == "startpos")
       {
 #ifdef LARGEBOARDS
-          if (Options["Protocol"] == "uci" && Options["UCI_Variant"] == "chess")
+          if (CurrentProtocol == UCI_GENERAL && Options["UCI_Variant"] == "chess")
           {
-              Options["Protocol"].set_default("ucicyclone");
+              CurrentProtocol = UCI_CYCLONE;
               Options["UCI_Variant"].set_default("xiangqi");
           }
 #endif
@@ -633,7 +639,7 @@ string UCI::value(Value v) {
 
   stringstream ss;
 
-  if (Options["Protocol"] == "xboard")
+  if (CurrentProtocol == XBOARD)
   {
       if (abs(v) < VALUE_MATE_IN_MAX_PLY)
           ss << v * 100 / PawnValueEg;
@@ -642,8 +648,8 @@ string UCI::value(Value v) {
   } else
 
   if (abs(v) < VALUE_MATE_IN_MAX_PLY)
-      ss << (Options["Protocol"] == "ucci" ? "" : "cp ") << v * 100 / PawnValueEg;
-  else if (Options["Protocol"] == "usi")
+      ss << (CurrentProtocol == UCCI ? "" : "cp ") << v * 100 / PawnValueEg;
+  else if (CurrentProtocol == USI)
       // In USI, mate distance is given in ply
       ss << "mate " << (v > 0 ? VALUE_MATE - v : -VALUE_MATE - v);
   else
@@ -673,20 +679,20 @@ string UCI::wdl(Value v, int ply) {
 
 std::string UCI::square(const Position& pos, Square s) {
 #ifdef LARGEBOARDS
-  if (Options["Protocol"] == "usi")
+  if (CurrentProtocol == USI)
       return rank_of(s) < RANK_10 ? std::string{ char('1' + pos.max_file() - file_of(s)), char('a' + pos.max_rank() - rank_of(s)) }
                                   : std::string{ char('0' + (pos.max_file() - file_of(s) + 1) / 10),
                                                  char('0' + (pos.max_file() - file_of(s) + 1) % 10),
                                                  char('a' + pos.max_rank() - rank_of(s)) };
-  else if (pos.max_rank() == RANK_10 && Options["Protocol"] != "uci")
+  else if (pos.max_rank() == RANK_10 && CurrentProtocol != UCI_GENERAL)
       return std::string{ char('a' + file_of(s)), char('0' + rank_of(s)) };
   else
       return rank_of(s) < RANK_10 ? std::string{ char('a' + file_of(s)), char('1' + (rank_of(s) % 10)) }
                                   : std::string{ char('a' + file_of(s)), char('0' + ((rank_of(s) + 1) / 10)),
                                                  char('0' + ((rank_of(s) + 1) % 10)) };
 #else
-  return Options["Protocol"] == "usi" ? std::string{ char('1' + pos.max_file() - file_of(s)), char('a' + pos.max_rank() - rank_of(s)) }
-                                      : std::string{ char('a' + file_of(s)), char('1' + rank_of(s)) };
+  return CurrentProtocol == USI ? std::string{ char('1' + pos.max_file() - file_of(s)), char('a' + pos.max_rank() - rank_of(s)) }
+                                : std::string{ char('a' + file_of(s)), char('1' + rank_of(s)) };
 #endif
 }
 
@@ -713,12 +719,12 @@ string UCI::move(const Position& pos, Move m) {
   Square to = to_sq(m);
 
   if (m == MOVE_NONE)
-      return Options["Protocol"] == "usi" ? "resign" : "(none)";
+      return CurrentProtocol == USI ? "resign" : "(none)";
 
   if (m == MOVE_NULL)
       return "0000";
 
-  if (is_pass(m) && Options["Protocol"] == "xboard")
+  if (is_pass(m) && CurrentProtocol == XBOARD)
       return "@@@@";
 
   if (is_gating(m) && gating_square(m) == to)
@@ -731,8 +737,12 @@ string UCI::move(const Position& pos, Move m) {
           to = to_sq(m);
   }
 
-  string move = (type_of(m) == DROP ? UCI::dropped_piece(pos, m) + (Options["Protocol"] == "usi" ? '*' : '@')
+  string move = (type_of(m) == DROP ? UCI::dropped_piece(pos, m) + (CurrentProtocol == USI ? '*' : '@')
                                     : UCI::square(pos, from)) + UCI::square(pos, to);
+
+  // Wall square
+  if (pos.wall_gating() && CurrentProtocol == XBOARD)
+      move += "," + UCI::square(pos, to) + UCI::square(pos, gating_square(m));
 
   if (type_of(m) == PROMOTION)
       move += pos.piece_to_char()[make_piece(BLACK, promotion_type(m))];
@@ -746,6 +756,10 @@ string UCI::move(const Position& pos, Move m) {
       if (gating_square(m) != from)
           move += UCI::square(pos, gating_square(m));
   }
+
+  // Wall square
+  if (pos.wall_gating() && CurrentProtocol != XBOARD)
+      move += "," + UCI::square(pos, to) + UCI::square(pos, gating_square(m));
 
   return move;
 }
@@ -773,26 +787,25 @@ Move UCI::to_move(const Position& pos, string& str) {
   return MOVE_NONE;
 }
 
-std::string UCI::option_name(std::string name, std::string protocol) {
-  if (protocol == "ucci" && name == "Hash")
+std::string UCI::option_name(std::string name) {
+  if (CurrentProtocol == UCCI && name == "Hash")
       return "hashsize";
-  if (protocol == "usi")
+  if (CurrentProtocol == USI)
   {
       if (name == "Hash" || name == "Ponder" || name == "MultiPV")
           return "USI_" + name;
       if (name.substr(0, 4) == "UCI_")
           name = "USI_" + name.substr(4);
   }
-  if (protocol == "ucci" || protocol == "usi")
+  if (CurrentProtocol == UCCI || CurrentProtocol == USI)
       std::replace(name.begin(), name.end(), ' ', '_');
   return name;
 }
 
 bool UCI::is_valid_option(UCI::OptionsMap& options, std::string& name) {
-  std::string protocol = options["Protocol"];
   for (const auto& it : options)
   {
-      std::string optionName = option_name(it.first, protocol);
+      std::string optionName = option_name(it.first);
       if (!options.key_comp()(optionName, name) && !options.key_comp()(name, optionName))
       {
           name = it.first;
@@ -801,5 +814,7 @@ bool UCI::is_valid_option(UCI::OptionsMap& options, std::string& name) {
   }
   return false;
 }
+
+Protocol CurrentProtocol = UCI_GENERAL; // Global object
 
 } // namespace Stockfish

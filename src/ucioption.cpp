@@ -48,7 +48,8 @@ namespace UCI {
 std::set<string> standard_variants = {
     "normal", "nocastle", "fischerandom", "knightmate", "3check", "makruk", "shatranj",
     "asean", "seirawan", "crazyhouse", "bughouse", "suicide", "giveaway", "losers", "atomic",
-    "capablanca", "gothic", "janus", "caparandom", "grand", "shogi", "xiangqi"
+    "capablanca", "gothic", "janus", "caparandom", "grand", "shogi", "xiangqi", "duck",
+    "berolina", "spartan"
 };
 
 void init_variant(const Variant* v) {
@@ -91,8 +92,8 @@ void on_variant_change(const Option &o) {
     // Do not send setup command for known variants
     if (standard_variants.find(o) != standard_variants.end())
         return;
-    int pocketsize = v->pieceDrops ? (v->pocketSize ? v->pocketSize : v->pieceTypes.size()) : 0;
-    if (Options["Protocol"] == "xboard")
+    int pocketsize = v->pieceDrops ? (v->pocketSize ? v->pocketSize : popcount(v->pieceTypes)) : 0;
+    if (CurrentProtocol == XBOARD)
     {
         // Overwrite setup command for Janggi variants
         auto itJanggi = variants.find("janggi");
@@ -114,8 +115,9 @@ void on_variant_change(const Option &o) {
                   << sync_endl;
         // Send piece command with Betza notation
         // https://www.gnu.org/software/xboard/Betza.html
-        for (PieceType pt : v->pieceTypes)
+        for (PieceSet ps = v->pieceTypes; ps;)
         {
+            PieceType pt = pop_lsb(ps);
             string suffix =   pt == PAWN && v->doubleStep     ? "ifmnD"
                             : pt == KING && v->cambodianMoves ? "ismN"
                             : pt == FERS && v->cambodianMoves ? "ifD"
@@ -145,7 +147,7 @@ void on_variant_change(const Option &o) {
                     suffix += std::string(v->dropNoDoubledCount, 'f');
                 else if (pt == BISHOP && v->dropOppositeColoredBishop)
                     suffix += "s";
-                suffix += "@" + std::to_string(pt == PAWN && !v->promotionZonePawnDrops ? v->promotionRank : v->maxRank + 1);
+                suffix += "@" + std::to_string(pt == PAWN && !v->promotionZonePawnDrops && v->promotionRegion[WHITE] ? rank_of(lsb(v->promotionRegion[WHITE])) : v->maxRank + 1);
             }
             sync_cout << "piece " << v->pieceToChar[pt] << "& " << pieceMap.find(pt == KING ? v->kingType : pt)->second->betza << suffix << sync_endl;
             PieceType promType = v->promotedPieceType[pt];
@@ -178,7 +180,6 @@ void init(OptionsMap& o) {
 
   constexpr int MaxHashMB = Is64Bit ? 33554432 : 2048;
 
-  o["Protocol"]              << Option("uci", {"uci", "usi", "ucci", "ucicyclone", "xboard"});
   o["Debug Log File"]        << Option("", on_logger);
   o["MoveScoreRange"]        << Option(100, 0, 1000);
   o["AbsScoreRange"]         << Option(100, 0, 1000);
@@ -223,12 +224,11 @@ void init(OptionsMap& o) {
 
 std::ostream& operator<<(std::ostream& os, const OptionsMap& om) {
 
-  if (Options["Protocol"] == "xboard")
+  if (CurrentProtocol == XBOARD)
   {
       for (size_t idx = 0; idx < om.size(); ++idx)
           for (const auto& it : om)
-              if (it.second.idx == idx && it.first != "Protocol" && it.first != "UCI_Variant"
-                                       && it.first != "Threads" && it.first != "Hash")
+              if (it.second.idx == idx && it.first != "UCI_Variant" && it.first != "Threads" && it.first != "Hash")
               {
                   const Option& o = it.second;
                   os << "\nfeature option=\"" << it.first << " -" << o.type;
@@ -261,11 +261,11 @@ std::ostream& operator<<(std::ostream& os, const OptionsMap& om) {
           {
               const Option& o = it.second;
               // UCI dialects do not allow spaces
-              if (Options["Protocol"] == "ucci" || Options["Protocol"] == "usi")
+              if (CurrentProtocol == UCCI || CurrentProtocol == USI)
               {
-                  string name = option_name(it.first, Options["Protocol"]);
+                  string name = option_name(it.first);
                   // UCCI skips "name"
-                  os << "\noption " << (Options["Protocol"] == "ucci" ? "" : "name ") << name << " type " << o.type;
+                  os << "\noption " << (CurrentProtocol == UCCI ? "" : "name ") << name << " type " << o.type;
               }
               else
                   os << "\noption name " << it.first << " type " << o.type;
