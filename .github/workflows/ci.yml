@@ -108,12 +108,3 @@ jobs:
         with:
           name: no-embedded-nnue
           path: src/emscripten/public/stockfish*
-
-      - name: Publish to NPM
-        if: startsWith(github.ref, 'refs/tags/')
-        working-directory: src/emscripten/public
-        run: |
-          npm config set //registry.npmjs.org/:_authToken ${NPM_TOKEN}
-          npm publish
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
