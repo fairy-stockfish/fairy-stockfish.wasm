@@ -1992,6 +1992,10 @@ string UCI::pv(const Position& pos, Depth depth, Value alpha, Value beta) {
 
   std::stringstream ss;
   TimePoint elapsed = Time.elapsed() + 1;
+  // Cf. https://github.com/niklasf/stockfish.wasm/issues/5
+  #ifdef __EMSCRIPTEN__
+  elapsed = std::max(elapsed, TimePoint(1));
+  #endif
   const RootMoves& rootMoves = pos.this_thread()->rootMoves;
   size_t pvIdx = pos.this_thread()->pvIdx;
   size_t multiPV = std::min((size_t)Options["MultiPV"], rootMoves.size());

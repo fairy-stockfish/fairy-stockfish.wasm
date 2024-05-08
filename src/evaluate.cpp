@@ -46,7 +46,11 @@
 //     const unsigned int         gEmbeddedNNUESize;    // the size of the embedded file
 // Note that this does not work in Microsoft Visual Studio.
 #if !defined(_MSC_VER) && !defined(NNUE_EMBEDDING_OFF)
+  #if defined(__EMSCRIPTEN__)
+  #include "emscripten/embedded_nnue.h"
+  #else
   INCBIN(EmbeddedNNUE, EvalFileDefaultName);
+  #endif
 #else
   const unsigned char        gEmbeddedNNUEData[1] = {0x0};
   [[maybe_unused]]
@@ -102,12 +106,20 @@ namespace Eval {
 
     currentNnueVariant = variants.find(variant)->second;
 
+    #ifdef __EMSCRIPTEN__
+
+    vector<string> dirs = { "<internal>", "" };
+
+    #else
+
     #if defined(DEFAULT_NNUE_DIRECTORY)
     #define stringify2(x) #x
     #define stringify(x) stringify2(x)
     vector<string> dirs = { "<internal>" , "" , CommandLine::binaryDirectory , stringify(DEFAULT_NNUE_DIRECTORY) };
     #else
     vector<string> dirs = { "<internal>" , "" , CommandLine::binaryDirectory };
+    #endif
+
     #endif
 
     for (string directory : dirs)
