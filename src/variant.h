@@ -66,7 +66,7 @@ struct Variant {
   bool blastOnCapture = false;
   PieceSet blastImmuneTypes = NO_PIECE_SET;
   PieceSet mutuallyImmuneTypes = NO_PIECE_SET;
-  bool petrifyOnCapture = false;
+  PieceSet petrifyOnCaptureTypes = NO_PIECE_SET;
   bool petrifyBlastPieces = false;
   bool doubleStep = true;
   Bitboard doubleStepRegion[COLOR_NB] = {Rank2BB, Rank7BB};
@@ -83,6 +83,7 @@ struct Variant {
   File castlingRookKingsideFile = FILE_MAX; // only has to match if rook is not in corner in non-960 variants
   File castlingRookQueensideFile = FILE_A; // only has to match if rook is not in corner in non-960 variants
   PieceSet castlingRookPieces[COLOR_NB] = {piece_set(ROOK), piece_set(ROOK)};
+  bool oppositeCastling = false;
   PieceType kingType = KING;
   bool checking = true;
   bool dropChecks = true;
@@ -94,7 +95,6 @@ struct Variant {
   bool capturesToHand = false;
   bool firstRankPawnDrops = false;
   bool promotionZonePawnDrops = false;
-  bool dropOnTop = false;
   EnclosingRule enclosingDrop = NO_ENCLOSING;
   Bitboard enclosingDropStart = 0;
   Bitboard whiteDropRegion = AllSquares;
@@ -106,16 +106,14 @@ struct Variant {
   int dropNoDoubledCount = 1;
   bool immobilityIllegal = false;
   bool gating = false;
-  bool arrowGating = false;
-  bool duckGating = false;
-  bool staticGating = false;
-  bool pastGating = false;
-  Bitboard staticGatingRegion = AllSquares;
+  WallingRule wallingRule = NO_WALLING;
+  Bitboard wallingRegion[COLOR_NB] = {AllSquares, AllSquares};
+  bool wallOrMove = false;
   bool seirawanGating = false;
   bool cambodianMoves = false;
   Bitboard diagonalLines = 0;
-  bool pass = false;
-  bool passOnStalemate = false;
+  bool pass[COLOR_NB] = {false, false};
+  bool passOnStalemate[COLOR_NB] = {false, false};
   bool makpongRule = false;
   bool flyingGeneral = false;
   Rank soldierPromotionRank = RANK_1;
@@ -149,13 +147,22 @@ struct Variant {
   int flagPieceCount = 1;
   bool flagPieceBlockedWin = false;
   bool flagMove = false;
+  bool flagPieceSafe = false;
   bool checkCounting = false;
   int connectN = 0;
+  PieceSet connectPieceTypes = ~NO_PIECE_SET;
   bool connectHorizontal = true;
   bool connectVertical = true;
   bool connectDiagonal = true;
+  Bitboard connectRegion1[COLOR_NB] = {};
+  Bitboard connectRegion2[COLOR_NB] = {};
+  int connectNxN = 0;
+  int collinearN = 0;
+  Value connectValue = VALUE_MATE;
   MaterialCounting materialCounting = NO_MATERIAL_COUNTING;
+  bool adjudicateFullBoard = false;
   CountingRule countingRule = NO_COUNTING;
+  CastlingRights castlingWins = NO_CASTLING;
 
   // Derived properties
   bool fastAttacks = true;
@@ -168,10 +175,10 @@ struct Variant {
   int pieceHandIndex[COLOR_NB][PIECE_NB];
   int kingSquareIndex[SQUARE_NB];
   int nnueMaxPieces;
-  bool endgameEval = false;
+  EndgameEval endgameEval = EG_EVAL_CHESS;
   bool shogiStylePromotions = false;
   std::vector<Direction> connect_directions;
-
+  PieceSet connectPieceTypesTrimmed = ~NO_PIECE_SET;
   void add_piece(PieceType pt, char c, std::string betza = "", char c2 = ' ') {
       // Avoid ambiguous definition by removing existing piece with same letter
       size_t idx;
@@ -215,6 +222,7 @@ struct Variant {
   // Reset values that always need to be redefined
   Variant* init() {
       nnueAlias = "";
+      endgameEval = EG_EVAL_CHESS;
       return this;
   }
 

@@ -14,13 +14,13 @@ jobs:
     runs-on: windows-2022
 
     steps:
-      - uses: al-cheb/configure-pagefile-action@v1.2	
+      - uses: al-cheb/configure-pagefile-action@v1.4	
         with:	
             minimum-size: 16GB
             maximum-size: 16GB
             disk-root: "C:"
 
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: make
         run: cd src && make clean && make -j build COMP=mingw ARCH=${{ matrix.arch }} EXE=bookgen_${{ matrix.arch }}.exe && strip bookgen_${{ matrix.arch }}.exe
@@ -30,21 +30,23 @@ jobs:
 
       - name: make all
         if: ${{ matrix.arch == 'x86-64' }}
-        run: cd src && make clean && make -j build COMP=mingw ARCH=${{ matrix.arch }} EXE=fairy-stockfish-all_${{ matrix.arch }}.exe largeboards=yes all=yes && strip fairy-stockfish-all_${{ matrix.arch }}.exe
+        run: cd src && make clean && make -j build COMP=mingw ARCH=${{ matrix.arch }} EXE=bookgen-all_${{ matrix.arch }}.exe largeboards=yes all=yes && strip bookgen-all_${{ matrix.arch }}.exe
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
-          name: bookgen
+          name: bookgen-windows-${{ matrix.arch }}
           path: src/bookgen*.exe
+          if-no-files-found: error
+          compression-level: 9
 
   linux:
     strategy:
       matrix:
         arch: ["x86-64-bmi2", "x86-64-modern", "x86-64"]
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: make
         run: cd src && make clean && make -j build COMP=gcc ARCH=${{ matrix.arch }} EXE=bookgen_${{ matrix.arch }} && strip bookgen_${{ matrix.arch }}
@@ -54,9 +56,61 @@ jobs:
 
       - name: make all
         if: ${{ matrix.arch == 'x86-64' }}
-        run: cd src && make clean && make -j build COMP=gcc ARCH=${{ matrix.arch }} EXE=fairy-stockfish-all_${{ matrix.arch }} largeboards=yes all=yes && strip fairy-stockfish-all_${{ matrix.arch }}
+        run: cd src && make clean && make -j build COMP=gcc ARCH=${{ matrix.arch }} EXE=bookgen-all_${{ matrix.arch }} largeboards=yes all=yes && strip bookgen-all_${{ matrix.arch }}
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
-          name: bookgen
+          name: bookgen-linux-${{ matrix.arch }}
           path: src/bookgen*
+          if-no-files-found: error
+          compression-level: 9
+
+  macos:
+    strategy:
+      matrix:
+        arch: ["x86-64"]
+    runs-on: macos-13
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: make
+        run: cd src && make clean && make -j build COMP=clang ARCH=${{ matrix.arch }} EXE=bookgen_${{ matrix.arch }} && strip bookgen_${{ matrix.arch }}
+
+      - name: make largeboards
+        run: cd src && make clean && make -j build COMP=clang ARCH=${{ matrix.arch }} EXE=bookgen-largeboards_${{ matrix.arch }} largeboards=yes && strip bookgen-largeboards_${{ matrix.arch }}
+
+      - name: make all
+        run: cd src && make clean && make -j build COMP=clang ARCH=${{ matrix.arch }} EXE=bookgen-all_${{ matrix.arch }} largeboards=yes all=yes && strip bookgen-all_${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bookgen-macos-${{ matrix.arch }}
+          path: src/bookgen*
+          if-no-files-found: error
+          compression-level: 9
+
+  macos-m1:
+    strategy:
+      matrix:
+        arch: ["apple-silicon"]
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: make
+        run: cd src && make clean && make -j build COMP=clang ARCH=${{ matrix.arch }} EXE=bookgen_${{ matrix.arch }} && strip bookgen_${{ matrix.arch }}
+
+      - name: make largeboards
+        run: cd src && make clean && make -j build COMP=clang ARCH=${{ matrix.arch }} EXE=bookgen-largeboards_${{ matrix.arch }} largeboards=yes && strip bookgen-largeboards_${{ matrix.arch }}
+
+      - name: make all
+        run: cd src && make clean && make -j build COMP=clang ARCH=${{ matrix.arch }} EXE=bookgen-all_${{ matrix.arch }} largeboards=yes all=yes && strip bookgen-all_${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bookgen-macos-m1-${{ matrix.arch }}
+          path: src/bookgen*
+          if-no-files-found: error
+          compression-level: 9

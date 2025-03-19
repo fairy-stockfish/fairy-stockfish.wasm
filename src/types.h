@@ -227,13 +227,22 @@ typedef uint64_t Bitboard;
 constexpr int SQUARE_BITS = 6;
 #endif
 
+//When defined, move list will be stored in heap. Delete this if you want to use stack to store move list. Using stack can cause overflow (Segmentation Fault) when the search is too deep.
+#define USE_HEAP_INSTEAD_OF_STACK_FOR_MOVE_LIST
+
 #ifdef ALLVARS
 constexpr int MAX_MOVES = 8192;
-constexpr int MAX_PLY   = 60;
+#ifdef USE_HEAP_INSTEAD_OF_STACK_FOR_MOVE_LIST
+constexpr int MAX_PLY = 246;
+#else
+constexpr int MAX_PLY = 60;
+#endif
+/// endif USE_HEAP_INSTEAD_OF_STACK_FOR_MOVE_LIST
 #else
 constexpr int MAX_MOVES = 1024;
-constexpr int MAX_PLY   = 246;
+constexpr int MAX_PLY = 246;
 #endif
+/// endif ALLVARS
 
 /// A move needs 16 bits to be stored
 ///
@@ -302,7 +311,15 @@ enum ChasingRule {
 };
 
 enum EnclosingRule {
-  NO_ENCLOSING, REVERSI, ATAXX
+  NO_ENCLOSING, REVERSI, ATAXX, QUADWRANGLE, SNORT, ANYSIDE, TOP
+};
+
+enum WallingRule {
+  NO_WALLING, ARROW, DUCK, EDGE, PAST, STATIC
+};
+
+enum EndgameEval {
+  NO_EG_EVAL, EG_EVAL_CHESS, EG_EVAL_ANTI, EG_EVAL_ATOMIC, EG_EVAL_DUCK, EG_EVAL_MISERE, EG_EVAL_RK, EG_EVAL_NB
 };
 
 enum OptBool {

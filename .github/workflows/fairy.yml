@@ -18,15 +18,15 @@ jobs:
       matrix:
         config:
           - {
-              name: "Ubuntu 20.04 GCC",
-              os: ubuntu-20.04,
+              name: "Ubuntu 24.04 GCC",
+              os: ubuntu-24.04,
               compiler: g++,
               comp: gcc,
               run_expensive_tests: true
             }
           - {
-              name: "Ubuntu 20.04 Clang",
-              os: ubuntu-20.04,
+              name: "Ubuntu 24.04 Clang",
+              os: ubuntu-24.04,
               compiler: clang++,
               comp: clang,
               run_expensive_tests: false
@@ -36,7 +36,7 @@ jobs:
       run:
         working-directory: src
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 

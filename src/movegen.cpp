@@ -29,7 +29,8 @@ namespace {
   ExtMove* make_move_and_gating(const Position& pos, ExtMove* moveList, Color us, Square from, Square to, PieceType pt = NO_PIECE_TYPE) {
 
     // Wall placing moves
-    if (pos.wall_gating())
+    //if it's "wall or move", and they chose non-null move, skip even generating wall move
+    if (pos.walling() && !(pos.variant()->wallOrMove && (from!=to)))
     {
         Bitboard b = pos.board_bb() & ~((pos.pieces() ^ from) | to);
         if (T == CASTLING)
@@ -41,13 +42,23 @@ namespace {
         }
         if (T == EN_PASSANT)
             b ^= pos.capture_square(to);
-        if (pos.variant()->arrowGating)
-            b &= moves_bb(us, type_of(pos.piece_on(from)), to, pos.pieces() ^ from);
-        if (pos.variant()->staticGating)
-            b &= pos.variant()->staticGatingRegion;
-        if (pos.variant()->pastGating)
-            b &= square_bb(from);
 
+        if (pos.walling_rule() == ARROW)
+            b &= moves_bb(us, type_of(pos.piece_on(from)), to, pos.pieces() ^ from);
+
+        //Any current or future wall variant must follow the walling region rule if set:
+        b &= pos.variant()->wallingRegion[us];
+
+        if (pos.walling_rule() == PAST)
+            b &= square_bb(from);
+        if (pos.walling_rule() == EDGE)
+        {
+            Bitboard wallsquares = pos.state()->wallSquares;
+
+            b &= (FileABB | file_bb(pos.max_file()) | Rank1BB | rank_bb(pos.max_rank())) |
+               ( shift<NORTH     >(wallsquares) | shift<SOUTH     >(wallsquares)
+               | shift<EAST      >(wallsquares) | shift<WEST      >(wallsquares));
+        }
         while (b)
             *moveList++ = make_gating<T>(from, to, pt, pop_lsb(b));
         return moveList;
@@ -431,8 +442,14 @@ namespace {
         }
 
         // Workaround for passing: Execute a non-move with any piece
-        if (pos.pass() && !pos.count<KING>(Us) && pos.pieces(Us))
+        if (pos.pass(Us) && !pos.count<KING>(Us) && pos.pieces(Us))
             *moveList++ = make<SPECIAL>(lsb(pos.pieces(Us)), lsb(pos.pieces(Us)));
+
+        //if "wall or move", generate walling action with null move
+        if (pos.variant()->wallOrMove)
+        {
+            moveList = make_move_and_gating<SPECIAL>(pos, moveList, Us, lsb(pos.pieces(Us)), lsb(pos.pieces(Us)));
+        }
     }
 
     // King moves
@@ -444,7 +461,7 @@ namespace {
             moveList = make_move_and_gating<NORMAL>(pos, moveList, Us, ksq, pop_lsb(b));
 
         // Passing move by king
-        if (pos.pass())
+        if (pos.pass(Us))
             *moveList++ = make<SPECIAL>(ksq, ksq);
 
         if ((Type == QUIETS || Type == NON_EVASIONS) && pos.can_castle(Us & ANY_CASTLING))

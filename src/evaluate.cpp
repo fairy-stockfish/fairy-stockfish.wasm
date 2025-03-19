@@ -174,10 +174,13 @@ namespace Eval {
         exit(EXIT_FAILURE);
     }
 
-    if (useNNUE)
-        sync_cout << "info string NNUE evaluation using " << eval_file_loaded << " enabled" << sync_endl;
-    else
-        sync_cout << "info string classical evaluation enabled" << sync_endl;
+    if (CurrentProtocol != XBOARD)
+    {
+        if (useNNUE)
+            sync_cout << "info string NNUE evaluation using " << eval_file_loaded << " enabled" << sync_endl;
+        else
+            sync_cout << "info string classical evaluation enabled" << sync_endl;
+    }
   }
 }
 
@@ -1292,6 +1295,15 @@ namespace {
     // Connect-n
     if (pos.connect_n() > 0)
     {
+        //Calculate eligible pieces for connection once.
+        //Still consider all opponent pieces as blocking.
+        Bitboard connectPiecesUs = 0;
+        for (PieceSet ps = pos.connect_piece_types(); ps;){
+            PieceType pt = pop_lsb(ps);
+            connectPiecesUs |= pos.pieces(pt);
+        };
+        connectPiecesUs &= pos.pieces(Us);
+
         for (const Direction& d : pos.getConnectDirections())
 
         {
@@ -1305,7 +1317,7 @@ namespace {
                 Square s = pop_lsb(b);
                 int c = 0;
                 for (int j = 0; j < pos.connect_n(); j++)
-                    if (pos.pieces(Us) & (s - j * d))
+                    if (connectPiecesUs & (s - j * d))
                         c++;
                 score += make_score(200, 200)  * c / (pos.connect_n() - c) / (pos.connect_n() - c);
             }

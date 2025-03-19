@@ -91,6 +91,35 @@ king = k:W
 startFen = 7k/5Kq1/8/8/8/8/8/8 w - - 0 1
 stalemateValue = loss
 nFoldValue = loss
+
+[betzatest]
+maxRank = 7
+maxFile = 7
+customPiece1 = a:lhN
+customPiece2 = b:rhN
+customPiece3 = c:hlN
+customPiece4 = d:hrN
+startFen = 7/7/7/3A3/7/7/7 w - - 0 1
+
+[cannonshogi:shogi]
+dropNoDoubled = -
+shogiPawnDropMateIllegal = false
+soldier = p
+cannon = u
+customPiece1 = a:pR
+customPiece2 = c:mBcpB
+customPiece3 = i:pB
+customPiece4 = w:mRpRmFpB2
+customPiece5 = f:mBpBmWpR2
+promotedPieceType = u:w a:w c:f i:f
+startFen = lnsgkgsnl/1rci1uab1/p1p1p1p1p/9/9/9/P1P1P1P1P/1BAU1ICR1/LNSGKGSNL[-] w 0 1
+
+[fogofwar:chess]
+king = -
+commoner = k
+castlingKingPiece = k
+extinctionValue = loss
+extinctionPieceTypes = k
 """
 
 sf.load_variant_config(ini_text)
@@ -308,6 +337,29 @@ class TestPyffish(unittest.TestCase):
         result = sf.legal_moves("shogun", SHOGUN, ["c2c4", "b8c6", "b2b4", "b7b5", "c4b5", "c6b8"])
         self.assertIn("b5b6+", result)
 
+        # Seirawan gating but no castling
+        fen = "rnbq3r/pp2bkpp/8/2p1p2K/2p1P3/8/PPPP1PPP/RNB4R[EHeh] b ABCHabcdh - 0 10"
+        result = sf.legal_moves("seirawan", fen, [])
+        self.assertIn("c8g4h", result)
+
+        # In Cannon Shogi the FGC and FSC can also move one square diagonally and, besides,
+        # move or capture two squares diagonally, by leaping an adjacent piece. 
+        fen = "lnsg1gsnl/1rc1kuab1/p1+A1p1p1p/3P5/6i2/6P2/P1P1P3P/1B1U1ICR1/LNSGKGSNL[] w - - 1 3"
+        result = sf.legal_moves("cannonshogi", fen, [])
+        # mF
+        self.assertIn("c7b6", result)
+        self.assertIn("c7d8", result)
+        self.assertNotIn("c7d6", result)
+        self.assertNotIn("c7b8", result)
+        # pB2
+        self.assertIn("c7a9", result)
+        self.assertIn("c7e5", result)
+        self.assertNotIn("c7a5", result)
+        self.assertNotIn("c7e9", result)
+        # verify distance limited to 2
+        self.assertNotIn("c7f4", result)
+        self.assertNotIn("c7g3", result)
+
         # Cambodian queen cannot capture with its leap
         # Cambodian king cannot leap to escape check
         result = sf.legal_moves("cambodian", CAMBODIAN, ["b1d2", "g8e7", "d2e4", "d6d5", "e4d6"])
@@ -329,6 +381,17 @@ class TestPyffish(unittest.TestCase):
         legals = ['a3a4', 'b3b4', 'c3c4', 'd3d4', 'e3e4', 'f3f4', 'g3g4', 'e1e2', 'f1f2', 'b1a2', 'b1b2', 'b1c2', 'c1b2', 'c1c2', 'c1d2', 'a1a2', 'g1g2', 'd1c2', 'd1d2', 'd1e2']
         result = sf.legal_moves("yarishogi", sf.start_fen("yarishogi"), [])
         self.assertCountEqual(legals, result)
+
+        # Test betza parsing
+        result = sf.legal_moves("betzatest", "7/7/7/3A3/7/7/7 w - - 0 1", [])
+        self.assertEqual(['d4c2', 'd4b3', 'd4b5', 'd4c6'], result)
+        result = sf.legal_moves("betzatest", "7/7/7/3B3/7/7/7 w - - 0 1", [])
+        self.assertEqual(['d4e2', 'd4f3', 'd4f5', 'd4e6'], result)
+        result = sf.legal_moves("betzatest", "7/7/7/3C3/7/7/7 w - - 0 1", [])
+        self.assertEqual(['d4e2', 'd4b3', 'd4f5', 'd4c6'], result)
+        result = sf.legal_moves("betzatest", "7/7/7/3D3/7/7/7 w - - 0 1", [])
+        self.assertEqual(['d4c2', 'd4f3', 'd4b5', 'd4e6'], result)
+
 
     def test_short_castling(self):
         legals = ['f5f4', 'a7a6', 'b7b6', 'c7c6', 'd7d6', 'e7e6', 'i7i6', 'j7j6', 'a7a5', 'b7b5', 'c7c5', 'e7e5', 'i7i5', 'j7j5', 'b8a6', 'b8c6', 'h6g4', 'h6i4', 'h6j5', 'h6f7', 'h6g8', 'h6i8', 'd5a2', 'd5b3', 'd5f3', 'd5c4', 'd5e4', 'd5c6', 'd5e6', 'd5f7', 'd5g8', 'j8g8', 'j8h8', 'j8i8', 'e8f7', 'c8b6', 'c8d6', 'g6g2', 'g6g3', 'g6f4', 'g6g4', 'g6h4', 'g6e5', 'g6g5', 'g6i5', 'g6a6', 'g6b6', 'g6c6', 'g6d6', 'g6e6', 'g6f6', 'g6h8', 'f8f7', 'f8g8', 'f8i8']
@@ -369,6 +432,12 @@ class TestPyffish(unittest.TestCase):
         result = sf.get_fen("chess", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w 1 2", [])
         self.assertEqual(result, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w - - 1 2")
 
+        # invalid castling rights
+        result = sf.get_fen("chess", "8/rnbqkbnr/pppppppp/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", [])
+        self.assertEqual(result, "8/rnbqkbnr/pppppppp/8/8/8/PPPPPPPP/RNBQKBNR w KQ - 0 1")
+        result = sf.get_fen("chess", "r7/1nbqkbnr/pppppppp/8/8/P6P/RPPPPPPR/1NBQKBN1 w KQkq - 0 1", [])
+        self.assertEqual(result, "r7/1nbqkbnr/pppppppp/8/8/P6P/RPPPPPPR/1NBQKBN1 w - - 0 1")
+
         # alternative piece symbols
         result = sf.get_fen("janggi", "rhea1aehr/4k4/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/4K4/RHEA1AEHR w - - 0 1", [])
         self.assertEqual(result, JANGGI)
@@ -396,6 +465,12 @@ class TestPyffish(unittest.TestCase):
         result = sf.get_fen("seirawan", fen0, ["e8g8"])
         self.assertEqual(result, fen1)
 
+        # handle invalid castling/gating flags
+        fen0 = "rnbq3r/pp2bkpp/8/2p1p2K/2p1P3/8/PPPP1PPP/RNB4R[EHeh] b QBCEHabcdk - 0 10"
+        fen1 = "rnbq3r/pp2bkpp/8/2p1p2K/2p1P3/8/PPPP1PPP/RNB4R[EHeh] b ABCHabcdh - 0 10"
+        result = sf.get_fen("seirawan", fen0, [])
+        self.assertEqual(result, fen1)
+
         result = sf.get_fen("chess", CHESS, [], True, False, False)
         self.assertEqual(result, CHESS960)
 
@@ -418,6 +493,11 @@ class TestPyffish(unittest.TestCase):
         self.assertEqual(result, "rnbqkbnr/pppp1ppp/4p3/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 2 2")
         result = sf.get_fen("pocketknight", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[Nn] w KQkq - 0 1", ["N@e4"])
         self.assertEqual(result, "rnbqkbnr/pppppppp/8/8/4N3/8/PPPPPPPP/RNBQKBNR[n] b KQkq - 0 1")
+
+        # duck chess en passant
+        fen = "r1b1k3/pp3pb1/4p3/2p2p2/2PpP2q/1P1P1P2/P1K1*3/RN1Q2N1 b q e3 0 17"
+        result = sf.get_fen("duck", fen, [])
+        self.assertEqual(result, fen)
 
         # SFEN
         result = sf.get_fen("shogi", SHOGI, [], False, True)
@@ -923,6 +1003,27 @@ class TestPyffish(unittest.TestCase):
         result = sf.is_capture("sittuyin", "8/2k5/8/4P3/4P1N1/5K2/8/8[] w - - 0 1", [], "e5e5f")
         self.assertFalse(result)
 
+    def test_piece_to_partner(self):
+        # take the rook and promote to queen
+        result = sf.piece_to_partner("bughouse", "r2qkbnr/1Ppppppp/2n5/8/8/8/1PPPPPPP/RNBQKBNR[] w KQkq - 0 1", ["b7a8q"])
+        self.assertEqual(result, "r")
+
+        # take back the queen (promoted pawn)
+        result = sf.piece_to_partner("bughouse", "r2qkbnr/1Ppppppp/2n5/8/8/8/1PPPPPPP/RNBQKBNR[] w KQkq - 0 1", ["b7a8q", "d8a8"])
+        self.assertEqual(result, "P")
+
+        # just a simple move (no take)
+        result = sf.piece_to_partner("bughouse", "r2qkbnr/1Ppppppp/2n5/8/8/8/1PPPPPPP/RNBQKBNR[] w KQkq - 0 1", ["b7a8q", "d8b8"])
+        self.assertEqual(result, "")
+
+        # silver takes the pawn and promotes to gold
+        result = sf.piece_to_partner("shogi", "lnsgkgsnl/1r5b1/ppppppppp/S8/9/9/PPPPPPPPP/1B5R1/LNSGKG1NL[] w 0 1", ["a6a7+"])
+        self.assertEqual(result, "p")
+
+        # take back the gold (promoted silver)
+        result = sf.piece_to_partner("shogi", "lnsgkgsnl/1r5b1/ppppppppp/S8/9/9/PPPPPPPPP/1B5R1/LNSGKG1NL[] w 0 1", ["a6a7+", "a9a7"])
+        self.assertEqual(result, "S")
+
     def test_game_result(self):
         result = sf.game_result("chess", CHESS, ["f2f3", "e7e5", "g2g4", "d8h4"])
         self.assertEqual(result, -sf.VALUE_MATE)
@@ -957,177 +1058,137 @@ class TestPyffish(unittest.TestCase):
         result = sf.game_result("royalduck", "rnbqk1nr/pppp1ppp/4p3/8/7P/5Pb1/PPPPP*P1/RNBQKBNR w KQkq - 1 4", [])
         self.assertEqual(result, sf.VALUE_MATE)
 
+    def _check_immediate_game_end(self, variant, fen, moves, game_end, game_result=None):
+        with self.subTest(variant=variant, fen=fen, game_end=game_end, game_result=game_result):
+            result = sf.is_immediate_game_end(variant, fen, moves)
+            self.assertEqual(result[0], game_end)
+            if game_result is not None:
+                self.assertEqual(result[1], game_result)
+
     def test_is_immediate_game_end(self):
-        result = sf.is_immediate_game_end("capablanca", CAPA, [])
-        self.assertFalse(result[0])
+        self._check_immediate_game_end("capablanca", CAPA, [], False)
 
         # bikjang (facing kings)
         moves = "e2e3 e9f9 h3d3 e7f7 i1i3 h10i8 i3h3 c10e7 h3h8 i10i9 h8b8 i9g9 d3f3 f9e9 f3f10 e7c10 f10c10 b10c8 c10g10 g9f9 b8c8 a10b10 b3f3 f9h9 a1a2 h9f9 a2d2 b10b9 d2d10 e9d10 c8c10 d10d9 f3f9 i8g9 f9b9 a7a6 g10g7 f7f6 e4e5 c7d7 g1e4 i7i6 e4b6 d9d8 c10c8 d8d9 b9g9 d7d6 b6e8 i6h6 e5e6 f6e6 c1e4 a6b6 e4b6 d6d5 c4c5 d9d10 e3d3 h6i6 c5c6 d5c5"
-        result = sf.is_immediate_game_end("janggi", JANGGI, moves.split())
-        self.assertFalse(result[0])
+        self._check_immediate_game_end("janggi", JANGGI, moves.split(), False)
 
         moves = "e2e3 e9f9 h3d3 e7f7 i1i3 h10i8 i3h3 c10e7 h3h8 i10i9 h8b8 i9g9 d3f3 f9e9 f3f10 e7c10 f10c10 b10c8 c10g10 g9f9 b8c8 a10b10 b3f3 f9h9 a1a2 h9f9 a2d2 b10b9 d2d10 e9d10 c8c10 d10d9 f3f9 i8g9 f9b9 a7a6 g10g7 f7f6 e4e5 c7d7 g1e4 i7i6 e4b6 d9d8 c10c8 d8d9 b9g9 d7d6 b6e8 i6h6 e5e6 f6e6 c1e4 a6b6 e4b6 d6d5 c4c5 d9d10 e3d3 h6i6 c5c6 d5c5 d3d3"
-        result = sf.is_immediate_game_end("janggi", JANGGI, moves.split())
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], -sf.VALUE_MATE)
+        self._check_immediate_game_end("janggi", JANGGI, moves.split(), True, -sf.VALUE_MATE)
+
+        # full board adjudication
+        self._check_immediate_game_end("flipello", "pppppppp/pppppppp/pppPpppp/pPpPpppp/pppppppp/pPpPPPPP/ppPpPPpp/pppppppp[PPpp] b - - 63 32", [], True, sf.VALUE_MATE)
+        self._check_immediate_game_end("ataxx", "PPPpppp/pppPPPp/pPPPPPP/PPPPPPp/ppPPPpp/pPPPPpP/pPPPPPP b - - 99 50", [], True, -sf.VALUE_MATE)
+        self._check_immediate_game_end("ataxx", "PPPpppp/pppPPPp/pPP*PPP/PP*P*Pp/ppP*Ppp/pPPPPpP/pPPPPPP b - - 99 50", [], True, -sf.VALUE_MATE)
+
+    def _check_optional_game_end(self, variant, fen, moves, game_end, game_result=None):
+        with self.subTest(variant=variant, fen=fen, game_end=game_end, game_result=game_result):
+            result = sf.is_optional_game_end(variant, fen, moves)
+            self.assertEqual(result[0], game_end)
+            if game_result is not None:
+                self.assertEqual(result[1], game_result)
 
     def test_is_optional_game_end(self):
-        result = sf.is_optional_game_end("capablanca", CAPA, [])
-        self.assertFalse(result[0])
+        self._check_optional_game_end("capablanca", CAPA, [], False)
 
         # sittuyin stalemate due to optional promotion
-        result = sf.is_optional_game_end("sittuyin", "1k4PK/3r4/8/8/8/8/8/8[] w - - 0 1", [])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_DRAW)
+        self._check_optional_game_end("sittuyin", "1k4PK/3r4/8/8/8/8/8/8[] w - - 0 1", [], True, sf.VALUE_DRAW)
 
         # Xiangqi chasing rules
         # Also see http://www.asianxiangqi.org/English/AXF_rules_Eng.pdf
         # Direct chase by cannon
-        result = sf.is_optional_game_end("xiangqi", "2bakabnr/9/r1n1c4/2p1p1p1p/PP7/9/4P1P1P/2C3NC1/9/1NBAKAB1R w - - 0 1", ["c3a3", "a8b8", "a3b3", "b8a8", "b3a3", "a8b8", "a3b3", "b8a8", "b3a3"])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "2bakabnr/9/r1n1c4/2p1p1p1p/PP7/9/4P1P1P/2C3NC1/9/1NBAKAB1R w - - 0 1", ["c3a3", "a8b8", "a3b3", "b8a8", "b3a3", "a8b8", "a3b3", "b8a8", "b3a3"], True, sf.VALUE_MATE)
         # Chase with chasing side to move
-        result = sf.is_optional_game_end("xiangqi", "2bakabnr/9/r1n1c4/2p1p1p1p/PP7/9/4P1P1P/2C3NC1/9/1NBAKAB1R w - - 0 1", ["c3a3", "a8b8", "a3b3", "b8a8", "b3a3", "a8b8", "a3b3", "b8a8", "b3a3", "a8b8", "a3b3", "b8a8"])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], -sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "2bakabnr/9/r1n1c4/2p1p1p1p/PP7/9/4P1P1P/2C3NC1/9/1NBAKAB1R w - - 0 1", ["c3a3", "a8b8", "a3b3", "b8a8", "b3a3", "a8b8", "a3b3", "b8a8", "b3a3", "a8b8", "a3b3", "b8a8"], True, -sf.VALUE_MATE)
         # Discovered chase by cannon (including pawn capture)
-        result = sf.is_optional_game_end("xiangqi", "2bakabr1/9/9/r1p1p1p2/p7R/P8/9/9/9/CC1AKA3 w - - 0 1", ["a5a6", "a7b7", "a6b6", "b7a7", "b6a6", "a7b7", "a6b6", "b7a7", "b6a6"])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "2bakabr1/9/9/r1p1p1p2/p7R/P8/9/9/9/CC1AKA3 w - - 0 1", ["a5a6", "a7b7", "a6b6", "b7a7", "b6a6", "a7b7", "a6b6", "b7a7", "b6a6"], True, sf.VALUE_MATE)
         # Chase by soldier (draw)
-        result = sf.is_optional_game_end("xiangqi", "2bakabr1/9/9/r1p1p1p2/p7R/P8/9/9/9/1C1AKA3 w - - 0 1", ["a5a6", "a7b7", "a6b6", "b7a7", "b6a6", "a7b7", "a6b6", "b7a7", "b6a6"])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_DRAW)
+        self._check_optional_game_end("xiangqi", "2bakabr1/9/9/r1p1p1p2/p7R/P8/9/9/9/1C1AKA3 w - - 0 1", ["a5a6", "a7b7", "a6b6", "b7a7", "b6a6", "a7b7", "a6b6", "b7a7", "b6a6"], True, sf.VALUE_DRAW)
         # Discovered and anti-discovered chase by cannon
-        result = sf.is_optional_game_end("xiangqi", "5k3/9/9/5C3/5c3/5C3/9/9/5p3/4K4 w - - 0 1", ["f5d5", "f6d6", "d5f5", "d6f6", "f5d5", "f6d6", "d5f5", "d6f6"])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], -sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "5k3/9/9/5C3/5c3/5C3/9/9/5p3/4K4 w - - 0 1", ["f5d5", "f6d6", "d5f5", "d6f6", "f5d5", "f6d6", "d5f5", "d6f6"], True, -sf.VALUE_MATE)
         # Mutual chase (draw)
-        result = sf.is_optional_game_end("xiangqi", "4k4/7n1/9/4pR3/9/9/4P4/9/9/4K4 w - - 0 1", ["f7h7"] + 2 * ["h9f8", "h7h8", "f8g6", "h8g8", "g6i7", "g8g7", "i7h9", "g7h7"])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_DRAW)
+        self._check_optional_game_end("xiangqi", "4k4/7n1/9/4pR3/9/9/4P4/9/9/4K4 w - - 0 1", ["f7h7"] + 2 * ["h9f8", "h7h8", "f8g6", "h8g8", "g6i7", "g8g7", "i7h9", "g7h7"], True, sf.VALUE_DRAW)
         # Perpetual check vs. intermittent checks
-        result = sf.is_optional_game_end("xiangqi", "9/3kc4/3a5/3P5/9/4p4/9/4K4/9/3C5 w - - 0 1", 2 * ['d7e7', 'e5d5', 'e7d7', 'd5e5'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "9/3kc4/3a5/3P5/9/4p4/9/4K4/9/3C5 w - - 0 1", 2 * ['d7e7', 'e5d5', 'e7d7', 'd5e5'], True, sf.VALUE_MATE)
         # Perpetual check by soldier
-        result = sf.is_optional_game_end("xiangqi", "3k5/9/9/9/9/5p3/9/5p3/5K3/5C3 w - - 0 1", 2 * ['f2e2', 'f3e3', 'e2f2', 'e3f3'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_MATE)
-        result = sf.is_optional_game_end("xiangqi", "3k5/4P4/4b4/3C5/4c4/9/9/9/9/5K3 w - - 0 1", 2 * ['d7e7', 'e8g6', 'e7d7', 'g6e8'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_MATE)
-        result = sf.is_optional_game_end("xiangqi", "3k5/9/9/9/9/9/9/9/cr1CAK3/9 w - - 0 1", 2 * ['d2d4', 'b2b4', 'd4d2', 'b4b2'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_MATE)
-        result = sf.is_optional_game_end("xiangqi", "5k3/9/9/5C3/5c3/5C3/9/9/5p3/4K4 w - - 0 1", 2 * ['f5d5', 'f6d6', 'd5f5', 'd6f6'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], -sf.VALUE_MATE)
-        result = sf.is_optional_game_end("xiangqi", "4k4/9/4b4/2c2nR2/9/9/9/9/9/3K5 w - - 0 1", 2 * ['g7g6', 'f7g9', 'g6g7', 'g9f7'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_MATE)
-        result = sf.is_optional_game_end("xiangqi", "3P5/3k5/3nn4/9/9/9/9/9/9/5K3 w - - 0 1", 2 * ['d10e10', 'd9e9', 'e10d10', 'e9d9'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_MATE)
-        result = sf.is_optional_game_end("xiangqi", "4ck3/9/9/9/9/2r1R4/9/9/4A4/3AK4 w - - 0 1", 2 * ['e5e4', 'c5c4', 'e4e5', 'c4c5'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_MATE)
-        result = sf.is_optional_game_end("xiangqi", "4k4/9/9/c1c6/9/r8/9/9/C8/3K5 w - - 0 1", 2 * ['a2c2', 'a5c5', 'c2a2', 'c5a5'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "3k5/9/9/9/9/5p3/9/5p3/5K3/5C3 w - - 0 1", 2 * ['f2e2', 'f3e3', 'e2f2', 'e3f3'], True, sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "3k5/4P4/4b4/3C5/4c4/9/9/9/9/5K3 w - - 0 1", 2 * ['d7e7', 'e8g6', 'e7d7', 'g6e8'], True, sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "3k5/9/9/9/9/9/9/9/cr1CAK3/9 w - - 0 1", 2 * ['d2d4', 'b2b4', 'd4d2', 'b4b2'], True, sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "5k3/9/9/5C3/5c3/5C3/9/9/5p3/4K4 w - - 0 1", 2 * ['f5d5', 'f6d6', 'd5f5', 'd6f6'], True, -sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "4k4/9/4b4/2c2nR2/9/9/9/9/9/3K5 w - - 0 1", 2 * ['g7g6', 'f7g9', 'g6g7', 'g9f7'], True, sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "3P5/3k5/3nn4/9/9/9/9/9/9/5K3 w - - 0 1", 2 * ['d10e10', 'd9e9', 'e10d10', 'e9d9'], True, sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "4ck3/9/9/9/9/2r1R4/9/9/4A4/3AK4 w - - 0 1", 2 * ['e5e4', 'c5c4', 'e4e5', 'c4c5'], True, sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "4k4/9/9/c1c6/9/r8/9/9/C8/3K5 w - - 0 1", 2 * ['a2c2', 'a5c5', 'c2a2', 'c5a5'], True, sf.VALUE_MATE)
         # Mutual perpetual check
-        result = sf.is_optional_game_end("xiangqi", "9/4c4/3k5/3r5/9/9/4C4/9/4K4/3R5 w - - 0 1", 2 * ['e4d4', 'd7e7', 'd4e4', 'e7d7'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_DRAW)
-        result = sf.is_optional_game_end("xiangqi", "3k5/6c2/9/7P1/6c2/6P2/9/9/9/5K3 w - - 0 1", 2 * ['h7g7', 'g6h6', 'g7h7', 'h6g6'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_DRAW)
-        result = sf.is_optional_game_end("xiangqi", "4ck3/9/9/9/9/2r1R1N2/6N2/9/4A4/3AK4 w - - 0 1", 2 * ['e5e4', 'c5c4', 'e4e5', 'c4c5'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_DRAW)
-        result = sf.is_optional_game_end("xiangqi", "5k3/9/9/c8/9/P1P6/9/2C6/9/3K5 w - - 0 1", 2 * ['c3a3', 'a7c7', 'a3c3', 'c7a7'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_DRAW)
-        result = sf.is_optional_game_end("xiangqi", "4k4/9/r1r6/9/PPPP5/9/9/9/1C7/5K3 w - - 0 1", ['b2a2'] + 2 * ['a8b8', 'a2c2', 'c8d8', 'c2b2', 'b8a8', 'b2d2', 'd8c8', 'd2a2'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_DRAW)
+        self._check_optional_game_end("xiangqi", "9/4c4/3k5/3r5/9/9/4C4/9/4K4/3R5 w - - 0 1", 2 * ['e4d4', 'd7e7', 'd4e4', 'e7d7'], True, sf.VALUE_DRAW)
+        self._check_optional_game_end("xiangqi", "3k5/6c2/9/7P1/6c2/6P2/9/9/9/5K3 w - - 0 1", 2 * ['h7g7', 'g6h6', 'g7h7', 'h6g6'], True, sf.VALUE_DRAW)
+        self._check_optional_game_end("xiangqi", "4ck3/9/9/9/9/2r1R1N2/6N2/9/4A4/3AK4 w - - 0 1", 2 * ['e5e4', 'c5c4', 'e4e5', 'c4c5'], True, sf.VALUE_DRAW)
+        self._check_optional_game_end("xiangqi", "5k3/9/9/c8/9/P1P6/9/2C6/9/3K5 w - - 0 1", 2 * ['c3a3', 'a7c7', 'a3c3', 'c7a7'], True, sf.VALUE_DRAW)
+        self._check_optional_game_end("xiangqi", "4k4/9/r1r6/9/PPPP5/9/9/9/1C7/5K3 w - - 0 1", ['b2a2'] + 2 * ['a8b8', 'a2c2', 'c8d8', 'c2b2', 'b8a8', 'b2d2', 'd8c8', 'd2a2'], True, sf.VALUE_DRAW)
 
         # Corner cases
         # D106: Chariot chases cannon, but attack actually does not change (draw)
-        result = sf.is_optional_game_end("xiangqi", "3k2b2/4P4/4b4/9/8p/6Bc1/6P1P/3AB4/4pp3/1p1K3R1[] w - - 0 1", 2 * ["h1h2", "h5h4", "h2h1", "h4h5"])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_DRAW)
+        self._check_optional_game_end("xiangqi", "3k2b2/4P4/4b4/9/8p/6Bc1/6P1P/3AB4/4pp3/1p1K3R1[] w - - 0 1", 2 * ["h1h2", "h5h4", "h2h1", "h4h5"], True, sf.VALUE_DRAW)
         # D39: Chased chariot pinned by horse + mutual chase (controversial if pinned chariot chases)
-        result = sf.is_optional_game_end("xiangqi", "2baka1r1/C4rN2/9/1Rp1p4/9/9/4P4/9/4A4/4KA3 w - - 0 1", ["b7b9"] + 2 * ["f10e9", "b9b10", "e9f10", "b10b9"])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "2baka1r1/C4rN2/9/1Rp1p4/9/9/4P4/9/4A4/4KA3 w - - 0 1", ["b7b9"] + 2 * ["f10e9", "b9b10", "e9f10", "b10b9"], True, sf.VALUE_MATE)
         # D39: Chased chariot pinned by horse + mutual chase (controversial if pinned chariot chases)
-        result = sf.is_optional_game_end("xiangqi", "5k3/9/9/9/9/9/7r1/9/2nRA3c/4K4 w - - 0 1", 2 * ['e2f1', 'h4h2', 'f1e2', 'h2h4'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "5k3/9/9/9/9/9/7r1/9/2nRA3c/4K4 w - - 0 1", 2 * ['e2f1', 'h4h2', 'f1e2', 'h2h4'], True, sf.VALUE_MATE)
         # Creating pins to undermine root
-        result = sf.is_optional_game_end("xiangqi", "4k4/4c4/9/4p4/9/9/3rn4/3NR4/4K4/9 b - - 0 1", 2 * ['e4g5', 'e2f2', 'g5e4', 'f2e2'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], -sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "4k4/4c4/9/4p4/9/9/3rn4/3NR4/4K4/9 b - - 0 1", 2 * ['e4g5', 'e2f2', 'g5e4', 'f2e2'], True, -sf.VALUE_MATE)
         # Discovered check capture threat by rook
-        result = sf.is_optional_game_end("xiangqi", "5k3/9/9/9/9/1N2P1C2/9/4BC3/9/cr1RK4 w - - 0 1", 2 * ['b5c3', 'b1c1', 'c3b5', 'c1b1'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "5k3/9/9/9/9/1N2P1C2/9/4BC3/9/cr1RK4 w - - 0 1", 2 * ['b5c3', 'b1c1', 'c3b5', 'c1b1'], True, sf.VALUE_MATE)
         # Creating a pin to undermine root + discovered check threat by horse
-        result = sf.is_optional_game_end("xiangqi", "5k3/9/9/9/9/4c4/3n5/3NBA3/4A4/4K4 w - - 0 1", 2 * ['e1d1', 'e5d5', 'd1e1', 'd5e5'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "5k3/9/9/9/9/4c4/3n5/3NBA3/4A4/4K4 w - - 0 1", 2 * ['e1d1', 'e5d5', 'd1e1', 'd5e5'], True, sf.VALUE_MATE)
         # Creating a pin to undermine root + discovered check threat by rook
-        result = sf.is_optional_game_end("xiangqi", "5k3/9/9/9/9/4c4/3r5/3NB4/4A4/4K4 w - - 0 1", 2 * ['e1d1', 'e5d5', 'd1e1', 'd5e5'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "5k3/9/9/9/9/4c4/3r5/3NB4/4A4/4K4 w - - 0 1", 2 * ['e1d1', 'e5d5', 'd1e1', 'd5e5'], True, sf.VALUE_MATE)
         # X-Ray protected discovered check
-        result = sf.is_optional_game_end("xiangqi", "5k3/9/9/9/9/9/9/9/9/3NK1cr1 w - - 0 1", 2 * ['d1c3', 'h1h3', 'c3d1', 'h3h1'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "5k3/9/9/9/9/9/9/9/9/3NK1cr1 w - - 0 1", 2 * ['d1c3', 'h1h3', 'c3d1', 'h3h1'], True, sf.VALUE_MATE)
         # No overprotection by king
-        result = sf.is_optional_game_end("xiangqi", "3k5/9/9/3n5/9/9/3r5/9/9/3NK4 w - - 0 1", 2 * ['d1c3', 'd4c4', 'c3d1', 'c4d4'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_DRAW)
+        self._check_optional_game_end("xiangqi", "3k5/9/9/3n5/9/9/3r5/9/9/3NK4 w - - 0 1", 2 * ['d1c3', 'd4c4', 'c3d1', 'c4d4'], True, sf.VALUE_DRAW)
         # Overprotection by king
-        result = sf.is_optional_game_end("xiangqi", "3k5/9/9/9/9/9/3r5/9/9/3NK4 w - - 0 1", 2 * ['d1c3', 'd4c4', 'c3d1', 'c4d4'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "3k5/9/9/9/9/9/3r5/9/9/3NK4 w - - 0 1", 2 * ['d1c3', 'd4c4', 'c3d1', 'c4d4'], True, sf.VALUE_MATE)
         # Mutual pins by flying generals
-        result = sf.is_optional_game_end("xiangqi", "4k4/9/9/9/4n4/9/5C3/9/4N4/4K4 w - - 0 1", 2 * ['e2g1', 'e10f10', 'g1e2', 'f10e10'])
-        self.assertTrue(result[0])
-        #self.assertEqual(result[1], sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "4k4/9/9/9/4n4/9/5C3/9/4N4/4K4 w - - 0 1", 2 * ['e2g1', 'e10f10', 'g1e2', 'f10e10'], True) #, sf.VALUE_MATE)
         # Fake protection by cannon
-        result = sf.is_optional_game_end("xiangqi", "5k3/9/9/9/9/1C7/1r7/9/1C7/4K4 w - - 0 1", 2 * ['b5c5', 'b4c4', 'c5b5', 'c4b4'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_MATE)
+        self._check_optional_game_end("xiangqi", "5k3/9/9/9/9/1C7/1r7/9/1C7/4K4 w - - 0 1", 2 * ['b5c5', 'b4c4', 'c5b5', 'c4b4'], True, sf.VALUE_MATE)
         # Fake protection by cannon + mutual chase
-        result = sf.is_optional_game_end("xiangqi", "4ka3/c2R1R2c/4b4/9/9/9/9/9/9/4K4 w - - 0 1", 2 * ['f9f7', 'f10e9', 'f7f9', 'e9f10'])
-        self.assertTrue(result[0])
-        self.assertEqual(result[1], sf.VALUE_DRAW)
+        self._check_optional_game_end("xiangqi", "4ka3/c2R1R2c/4b4/9/9/9/9/9/9/4K4 w - - 0 1", 2 * ['f9f7', 'f10e9', 'f7f9', 'e9f10'], True, sf.VALUE_DRAW)
 
     def test_has_insufficient_material(self):
         for variant, positions in variant_positions.items():
             for fen, expected_result in positions.items():
-                result = sf.has_insufficient_material(variant, fen, [])
-                self.assertEqual(result, expected_result, "{}: {}".format(variant, fen))
+                with self.subTest(variant=variant, fen=fen):
+                    result = sf.has_insufficient_material(variant, fen, [])
+                    self.assertEqual(result, expected_result)
 
     def test_validate_fen(self):
         # valid
         for variant, positions in variant_positions.items():
             for fen in positions:
-                self.assertEqual(sf.validate_fen(fen, variant), sf.FEN_OK, "{}: {}".format(variant, fen))
+                with self.subTest(variant=variant, fen=fen):
+                    self.assertEqual(sf.validate_fen(fen, variant), sf.FEN_OK)
         # invalid
         for variant, positions in invalid_variant_positions.items():
             for fen in positions:
-                self.assertNotEqual(sf.validate_fen(fen, variant), sf.FEN_OK, "{}: {}".format(variant, fen))
+                with self.subTest(variant=variant, fen=fen):
+                    self.assertNotEqual(sf.validate_fen(fen, variant), sf.FEN_OK)
         # chess960
-        self.assertEqual(sf.validate_fen(CHESS960, "chess", True), sf.FEN_OK, "{}: {}".format(variant, fen))
+        self.assertEqual(sf.validate_fen(CHESS960, "chess", True), sf.FEN_OK)
         self.assertEqual(sf.validate_fen("nrbqbkrn/pppppppp/8/8/8/8/PPPPPPPP/NRBQBKRN w BGbg - 0 1", "newzealand", True), sf.FEN_OK, "{}: {}".format(variant, fen))
         # all variants starting positions
         for variant in sf.variants():
-            fen = sf.start_fen(variant)
-            self.assertEqual(sf.validate_fen(fen, variant), sf.FEN_OK, "{}: {}".format(variant, fen))
+            with self.subTest(variant=variant):
+                fen = sf.start_fen(variant)
+                self.assertEqual(sf.validate_fen(fen, variant), sf.FEN_OK)
+
+    def test_get_fog_fen(self):
+        fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"  # startpos
+        result = sf.get_fog_fen(fen, "fogofwar")
+        self.assertEqual(result, "********/********/********/********/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+
+        fen = "rnbqkbnr/p1p2ppp/8/Pp1pp3/4P3/8/1PPP1PPP/RNBQKBNR w KQkq b6 0 1"
+        result = sf.get_fog_fen(fen, "fogofwar")
+        self.assertEqual(result, "********/********/2******/Pp*p***1/4P3/4*3/1PPP1PPP/RNBQKBNR w KQkq b6 0 1")
+        
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
