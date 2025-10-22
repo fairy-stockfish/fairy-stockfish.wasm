@@ -39,7 +39,7 @@ pyffish_module = Extension(
     sources=sources,
     extra_compile_args=args)
 
-setup(name="pyffish", version="0.0.87",
+setup(name="pyffish", version="0.0.88",
       description="Fairy-Stockfish Python wrapper",
       long_description=long_description,
       long_description_content_type="text/markdown",
@@ -49,5 +49,6 @@ setup(name="pyffish", version="0.0.87",
       classifiers=CLASSIFIERS,
       url="https://github.com/gbtami/Fairy-Stockfish",
       python_requires=">=2.7,!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*",
-      ext_modules=[pyffish_module]
+      ext_modules=[pyffish_module],
+      data_files=[("", ["pyffish.pyi"])]
       )
