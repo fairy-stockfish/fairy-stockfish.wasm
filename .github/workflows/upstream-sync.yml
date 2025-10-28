@@ -1,0 +1,61 @@
+name: Upstream Sync
+
+on:
+  schedule:
+    # Run once a week on Friday at 00:00 UTC (night from Thursday to Friday)
+    - cron: '0 0 * * 5'
+
+  workflow_dispatch:
+    # Allow manual trigger with options
+    inputs:
+      test_mode:
+        description: 'Test mode - sync without pushing changes'
+        required: false
+        type: boolean
+        default: false
+      shallow_since:
+        description: 'How far back to fetch history'
+        required: false
+        type: choice
+        options:
+          - '1 week ago'
+          - '1 month ago'
+          - '1 year ago'
+        default: '1 week ago'
+
+jobs:
+  sync_latest_from_upstream:
+    runs-on: ubuntu-latest
+    name: Sync latest commits from upstream repo
+    permissions:
+      contents: write
+
+    steps:
+      # Step 1: Checkout target repo
+      - name: Checkout target repo
+        uses: actions/checkout@v5
+        with:
+          ref: nnue
+          # Required for pushing changes
+          persist-credentials: true
+
+      # Step 2: Sync upstream changes
+      - name: Sync upstream changes
+        id: sync
+        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.1
+        with:
+          target_sync_branch: nnue
+          target_repo_token: ${{ secrets.GITHUB_TOKEN }}
+          upstream_sync_branch: master
+          upstream_sync_repo: fairy-stockfish/Fairy-Stockfish
+          test_mode: ${{ inputs.test_mode || false }}
+          shallow_since: ${{ inputs.shallow_since || '1 month ago' }}
+
+      # Step 3: Display sync status
+      - name: New commits found
+        if: steps.sync.outputs.has_new_commits == 'true'
+        run: echo "New commits were found and synced from upstream."
+      
+      - name: No new commits
+        if: steps.sync.outputs.has_new_commits == 'false'
+        run: echo "Repository is already up to date with upstream."

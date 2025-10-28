@@ -1,0 +1,68 @@
+name: Merge NNUE to Bookgen
+
+on:
+  schedule:
+    # Run once a week on Monday at 00:00 UTC (night from Sunday to Monday)
+    - cron: '0 0 * * 1'
+
+  workflow_dispatch:
+    # Allow manual trigger
+
+jobs:
+  merge_branches:
+    runs-on: ubuntu-latest
+    name: Merge nnue branch into bookgen
+    permissions:
+      contents: write
+
+    steps:
+      # Step 1: Checkout bookgen branch
+      - name: Checkout bookgen branch
+        uses: actions/checkout@v5
+        with:
+          ref: bookgen
+          fetch-depth: 0
+          # Required for pushing changes
+          persist-credentials: true
+
+      # Step 2: Configure git
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # Step 3: Fetch nnue branch
+      - name: Fetch nnue branch
+        run: git fetch origin nnue:nnue
+
+      # Step 4: Merge nnue into bookgen
+      - name: Merge nnue into bookgen
+        id: merge
+        run: |
+          echo "Attempting to merge nnue into bookgen..."
+          if git merge nnue --no-edit -m "Merge nnue into bookgen (automated weekly merge)"; then
+            echo "merge_status=success" >> $GITHUB_OUTPUT
+            echo "Merge completed successfully"
+          else
+            echo "merge_status=conflict" >> $GITHUB_OUTPUT
+            echo "Merge conflict detected"
+            exit 1
+          fi
+
+      # Step 5: Push changes to bookgen
+      - name: Push changes to bookgen
+        if: steps.merge.outputs.merge_status == 'success'
+        run: |
+          echo "Pushing merged changes to bookgen..."
+          git push origin bookgen
+
+      # Step 6: Report status
+      - name: Merge successful
+        if: steps.merge.outputs.merge_status == 'success'
+        run: echo "Successfully merged nnue into bookgen and pushed changes."
+
+      - name: Merge conflict
+        if: steps.merge.outputs.merge_status == 'conflict'
+        run: |
+          echo "::error::Merge conflict occurred. Manual intervention required."
+          exit 1
