@@ -1033,7 +1033,7 @@ Value Endgame<RK, EG_EVAL_ANTI>::operator()(const Position& pos) const {
 }
 
 
-/// K vs N. The king usally wins, but there are a few exceptions.
+/// K vs N. The king usually wins, but there are a few exceptions.
 template<>
 Value Endgame<KN, EG_EVAL_ANTI>::operator()(const Position& pos) const {
 
@@ -1041,16 +1041,26 @@ Value Endgame<KN, EG_EVAL_ANTI>::operator()(const Position& pos) const {
 
   Square KSq = pos.square<COMMONER>(strongSide);
   Square NSq = pos.square<KNIGHT>(weakSide);
+  Bitboard kingAttacks = attacks_bb<KING>(KSq) & pos.board_bb();
+  Bitboard knightAttacks = attacks_bb<KNIGHT>(NSq) & pos.board_bb();
+  bool strongSideToMove = pos.side_to_move() == strongSide;
 
-  // wins for knight
-  if (pos.side_to_move() == strongSide && (attacks_bb<KNIGHT>(NSq) & KSq))
-      return -VALUE_KNOWN_WIN;
-  if (pos.side_to_move() == weakSide && (attacks_bb<KNIGHT>(NSq) & attacks_bb<KING>(KSq)))
-      return VALUE_KNOWN_WIN;
+  // Loss in 1 play
+  if (strongSideToMove ? kingAttacks & NSq : knightAttacks & KSq)
+      return VALUE_TB_LOSS_IN_MAX_PLY + 1;
+  // Win in 2 ply
+  if (kingAttacks & knightAttacks)
+      return VALUE_TB_WIN_IN_MAX_PLY - 2;
+  // Loss in 3 ply
+  if (strongSideToMove ? knightAttacks & KSq : kingAttacks & NSq)
+      return VALUE_TB_LOSS_IN_MAX_PLY + 3;
 
-  Value result = VALUE_KNOWN_WIN + push_to_edge(NSq, pos) - push_to_edge(KSq, pos);
+  Value result = Value(push_to_edge(NSq, pos)) - push_to_edge(KSq, pos);
+  // The king usually wins, but scenarios with king on the edge are more complicated
+  if (!(KSq & (FileABB | FileHBB | Rank1BB | Rank8BB)))
+      result += VALUE_KNOWN_WIN;
 
-  return strongSide == pos.side_to_move() ? result : -result;
+  return strongSideToMove ? result : -result;
 }
 
 /// N vs N. The side to move always wins/loses if the knights are on
@@ -1074,9 +1084,9 @@ Value Endgame<KXK, EG_EVAL_ATOMIC>::operator()(const Position& pos) const {
 
   assert(pos.endgame_eval() == EG_EVAL_ATOMIC);
 
-  // Stalemate detection with lone king
+  // Stalemate/checkmate detection with lone king
   if (pos.side_to_move() == weakSide && !MoveList<LEGAL>(pos).size())
-      return VALUE_DRAW;
+      return std::min(pos.stalemate_value(), VALUE_MATE_IN_MAX_PLY - 1);
 
   Square winnerKSq = pos.square<COMMONER>(strongSide);
   Square loserKSq = pos.square<COMMONER>(weakSide);
@@ -1127,22 +1137,23 @@ Value Endgame<KQK, EG_EVAL_ATOMIC>::operator()(const Position& pos) const {
 
   assert(pos.endgame_eval() == EG_EVAL_ATOMIC);
 
-  // Stalemate detection with lone king
+  // Stalemate/checkmate detection with lone king
   if (pos.side_to_move() == weakSide && !MoveList<LEGAL>(pos).size())
-      return VALUE_DRAW;
+      return std::min(pos.stalemate_value(), VALUE_MATE_IN_MAX_PLY - 1);
 
   Square winnerKSq = pos.square<COMMONER>(strongSide);
   Square loserKSq = pos.square<COMMONER>(weakSide);
 
   int dist = distance(winnerKSq, loserKSq);
   // Draw in case of adjacent kings
-  // In the case of dist == 2, the square adjacent to both kings is ensured
-  // not be occupied by the queen, since eval is not called when in check.
-  if (dist <= (strongSide == pos.side_to_move() ? 1 : 2))
+  if (dist ==  1)
+      return VALUE_DRAW;
+  // If the weaker side is to move and there is a way to connect kings, it is a draw
+  if (   pos.side_to_move() == weakSide
+      && (attacks_bb<KING>(winnerKSq) & attacks_bb<KING>(loserKSq) & ~pos.pieces()))
       return VALUE_DRAW;
 
-  Value result =  pos.non_pawn_material(strongSide)
-                + push_to_edge(loserKSq, pos)
+  Value result =  Value(push_to_edge(loserKSq, pos))
                 + push_away(winnerKSq, loserKSq);
 
   if (dist >= (strongSide == pos.side_to_move() ? 3 : 4))

@@ -19,7 +19,7 @@ jobs:
         node-version: [12.x]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Setup cache
         id: cache-system-libraries
         uses: actions/cache@v4
@@ -31,7 +31,7 @@ jobs:
           version: ${{env.EM_VERSION}}
           actions-cache-folder: ${{env.EM_CACHE_FOLDER}}
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node-version }}
       - name: Build ffishjs
@@ -53,7 +53,7 @@ jobs:
         node-version: [12.x]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Setup cache
         id: cache-system-libraries
         uses: actions/cache@v4
@@ -65,14 +65,14 @@ jobs:
           version: ${{env.EM_VERSION}}
           actions-cache-folder: ${{env.EM_CACHE_FOLDER}}
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node-version }}
       - name: Build ffish.js ES6/ES2015 module
         working-directory: src
         run: rm -f ../tests/js/ffish.js & rm -f ../tests/js/ffish.wasm & make -f Makefile_js build es6=yes
       - name: Upload ffish.js ES6/ES2015 module ZIP archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ffishjs-es6
           path: tests/js/*
@@ -82,7 +82,7 @@ jobs:
         working-directory: src
         run: rm -f ../tests/js/ffish.js & rm -f ../tests/js/ffish.wasm & make -f Makefile_js build
       - name: Upload ffish.js standard module ZIP archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ffishjs-standard
           path: tests/js/*

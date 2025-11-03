@@ -120,6 +120,17 @@ commoner = k
 castlingKingPiece = k
 extinctionValue = loss
 extinctionPieceTypes = k
+
+[coregaldrop:coregal]
+pieceDrops = true
+startFen = rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[Qq] w KQkq - 0 1
+
+[cannonatomic:atomic]
+cannon = c
+
+[multipawn:chess]
+soldier = s
+pawnTypes = ps
 """
 
 sf.load_variant_config(ini_text)
@@ -236,6 +247,10 @@ variant_positions = {
     "wazirking": {
         "7k/6K1/8/8/8/8/8/8 b - - 0 1": (False, False),  # K vs K
     },
+    "multipawn": {
+        "k7/p7/8/8/8/8/8/K7 w - - 0 1": (True, False),  # K vs KP
+        "k7/s7/8/8/8/8/8/K7 w - - 0 1": (True, False),  # K vs KS
+    },
 }
 
 invalid_variant_positions = {
@@ -346,6 +361,11 @@ class TestPyffish(unittest.TestCase):
         result = sf.legal_moves("seirawan", fen, [])
         self.assertIn("c8g4h", result)
 
+        # Drop pseudo-royals into check
+        result = sf.legal_moves("coregaldrop", sf.start_fen("coregaldrop"), [])
+        self.assertIn("Q@a3", result)
+        self.assertNotIn("Q@a6", result)
+
         # In Cannon Shogi the FGC and FSC can also move one square diagonally and, besides,
         # move or capture two squares diagonally, by leaping an adjacent piece. 
         fen = "lnsg1gsnl/1rc1kuab1/p1+A1p1p1p/3P5/6i2/6P2/P1P1P3P/1B1U1ICR1/LNSGKGSNL[] w - - 1 3"
@@ -397,7 +417,7 @@ class TestPyffish(unittest.TestCase):
         self.assertEqual(['d4c2', 'd4f3', 'd4b5', 'd4e6'], result)
 
 
-    def test_short_castling(self):
+    def test_castling(self):
         legals = ['f5f4', 'a7a6', 'b7b6', 'c7c6', 'd7d6', 'e7e6', 'i7i6', 'j7j6', 'a7a5', 'b7b5', 'c7c5', 'e7e5', 'i7i5', 'j7j5', 'b8a6', 'b8c6', 'h6g4', 'h6i4', 'h6j5', 'h6f7', 'h6g8', 'h6i8', 'd5a2', 'd5b3', 'd5f3', 'd5c4', 'd5e4', 'd5c6', 'd5e6', 'd5f7', 'd5g8', 'j8g8', 'j8h8', 'j8i8', 'e8f7', 'c8b6', 'c8d6', 'g6g2', 'g6g3', 'g6f4', 'g6g4', 'g6h4', 'g6e5', 'g6g5', 'g6i5', 'g6a6', 'g6b6', 'g6c6', 'g6d6', 'g6e6', 'g6f6', 'g6h8', 'f8f7', 'f8g8', 'f8i8']
         moves = ['b2b4', 'f7f5', 'c2c3', 'g8d5', 'a2a4', 'h8g6', 'f2f3', 'i8h6', 'h2h3']
         result = sf.legal_moves("capablanca", CAPA, moves)
@@ -416,6 +436,20 @@ class TestPyffish(unittest.TestCase):
         # d1e1 is a normal king move, so castling has to be d1f1
         result = sf.legal_moves("diana", "rbnk1r/pppbpp/3p2/5P/PPPPPB/RBNK1R w KQkq - 2 3", [])
         self.assertIn("d1f1", result)
+
+        # Atomic960 castling
+        fen = "7k/8/8/8/8/8/2PP4/1RK4q w Q - 0 1"
+        moves = sf.legal_moves("atomic", fen, [], True)
+        # 'c1b1' is the castling move (king to rook square in 960 encoding) and must be illegal
+        self.assertNotIn("c1b1", moves)
+        # A normal king/commoner move like c1b2 should remain legal
+        self.assertIn("c1b2", moves)
+
+        # Atomic960 anti-discovered check with cannon
+        fen = "8/8/8/8/8/6k1/8/c5KR w K - 0 1"
+        moves = sf.legal_moves("cannonatomic", fen, [], True)
+        self.assertNotIn("g1h1", moves)
+        self.assertIn("g1f1", moves)
 
         # Check that in variants where castling rooks are not in the corner
         # the castling rook is nevertheless assigned correctly

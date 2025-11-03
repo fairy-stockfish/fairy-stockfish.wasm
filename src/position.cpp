@@ -447,7 +447,7 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
               // a) side to move have a pawn threatening epSquare
               // b) there is an enemy pawn one or two (for triple steps) squares in front of epSquare
               // c) there is no (non-wall) piece on epSquare or behind epSquare
-              if (   (var->enPassantRegion & epSquare)
+              if (   (var->enPassantRegion[sideToMove] & epSquare)
                   && (   !var->fastAttacks
                       || (var->enPassantTypes[sideToMove] & ~piece_set(PAWN))
                       || (   pawn_attacks_bb(~sideToMove, epSquare) & pieces(sideToMove, PAWN)
@@ -1127,10 +1127,12 @@ bool Position::legal(Move m) const {
           // Chess960 as they would be in standard chess.
           kto = make_square(to > from ? castling_kingside_file() : castling_queenside_file(), castling_rank(us));
           Direction step = kto > from ? EAST : WEST;
-          Square rto = kto - step;
+          Square rto = kto - (to > from ? EAST : WEST);
           // Pseudo-royal king
           if (st->pseudoRoyals & from)
-              for (Square s = from; s != kto; s += step)
+              // Loop over squares between the king and its final position
+              // Ensure to include the initial square if from == kto
+              for (Square s = from; from != kto ? s != kto : s == from; s += step)
                   if (  !(blast_on_capture() && (attacks_bb<KING>(s) & st->pseudoRoyals & pieces(~sideToMove)))
                       && attackers_to(s, occupied, ~us))
                       return false;
@@ -1146,6 +1148,9 @@ bool Position::legal(Move m) const {
       if (capture(m) && (var->petrifyOnCaptureTypes & type_of(moved_piece(m))) && (st->pseudoRoyals & from))
           return false;
       Bitboard pseudoRoyals = st->pseudoRoyals & pieces(sideToMove);
+      // Add dropped pseudo-royal
+      if (type_of(m) == DROP && (extinction_piece_types() & type_of(moved_piece(m))))
+          pseudoRoyals |= square_bb(to);
       Bitboard pseudoRoyalsTheirs = st->pseudoRoyals & pieces(~sideToMove);
       if (is_ok(from) && (pseudoRoyals & from))
           pseudoRoyals ^= square_bb(from) ^ kto;
@@ -1607,7 +1612,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           st->captureSquare = capsq;
 
           assert(st->epSquares & to);
-          assert(var->enPassantRegion & to);
+          assert(var->enPassantRegion[us] & to);
           assert(piece_on(to) == NO_PIECE);
       }
 
@@ -1844,7 +1849,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           && (   std::abs(int(to) - int(from)) == 2 * NORTH
               || std::abs(int(to) - int(from)) == 3 * NORTH))
       {
-          if (   (var->enPassantRegion & (to - pawn_push(us)))
+          if (   (var->enPassantRegion[them] & (to - pawn_push(us)))
               && ((pawn_attacks_bb(us, to - pawn_push(us)) & pieces(them, PAWN)) || var->enPassantTypes[them] & ~piece_set(PAWN))
               && !(walling() && gating_square(m) == to - pawn_push(us)))
           {
@@ -1852,7 +1857,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
               k ^= Zobrist::enpassant[file_of(to)];
           }
           if (   std::abs(int(to) - int(from)) == 3 * NORTH
-              && (var->enPassantRegion & (to - 2 * pawn_push(us)))
+              && (var->enPassantRegion[them] & (to - 2 * pawn_push(us)))
               && ((pawn_attacks_bb(us, to - 2 * pawn_push(us)) & pieces(them, PAWN)) || var->enPassantTypes[them] & ~piece_set(PAWN))
               && !(walling() && gating_square(m) == to - 2 * pawn_push(us)))
           {
@@ -1924,7 +1929,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
            && ((PseudoMoves[1][us][type_of(pc)][from] & ~PseudoMoves[0][us][type_of(pc)][from]) & to))
   {
       assert(type_of(pc) != PAWN);
-      st->epSquares = between_bb(from, to) & var->enPassantRegion;
+      st->epSquares = between_bb(from, to) & var->enPassantRegion[them];
       for (Bitboard b = st->epSquares; b; )
           k ^= Zobrist::enpassant[file_of(pop_lsb(b))];
   }
@@ -2229,7 +2234,7 @@ void Position::undo_move(Move m) {
               capsq = st->captureSquare;
 
               assert(st->previous->epSquares & to);
-              assert(var->enPassantRegion & to);
+              assert(var->enPassantRegion[sideToMove] & to);
               assert(piece_on(capsq) == NO_PIECE);
           }
 
@@ -2410,14 +2415,39 @@ Value Position::blast_see(Move m) const {
   }
 
   // Sum up blast piece values
+  bool extinctsUs = false;
+  bool extinctsThem = false;
   while (blast)
   {
       Piece bpc = piece_on(pop_lsb(blast));
       if (extinction_piece_types() & type_of(bpc))
-          return color_of(bpc) == us ?  extinction_value()
-                        : capture(m) ? -extinction_value()
-                                     : VALUE_ZERO;
+      {
+          if (color_of(bpc) == us)
+              extinctsUs = true;
+          else
+              extinctsThem = true;
+      }
       result += color_of(bpc) == us ? -CapturePieceValue[MG][bpc] : CapturePieceValue[MG][bpc];
+  }
+
+  // Evaluate extinctions
+  if (!capture(m))
+  {
+      // For quiet moves, the opponent can decide whether to capture or not
+      // so they can pick the better of the two
+      if (extinctsThem && extinctsUs)
+          return VALUE_ZERO;
+      if (extinctsThem)
+          return std::min(-extinction_value(), VALUE_ZERO);
+      if (extinctsUs)
+          return std::min(extinction_value(), VALUE_ZERO);
+  }
+  else
+  {
+      if (extinctsUs)
+          return extinction_value();
+      if (extinctsThem)
+          return -extinction_value();
   }
 
   return capture(m) || must_capture() ? result - 1 : std::min(result, VALUE_ZERO);
@@ -3237,7 +3267,7 @@ bool Position::pos_is_ok() const {
   if (   (sideToMove != WHITE && sideToMove != BLACK)
       || (count<KING>(WHITE) && piece_on(square<KING>(WHITE)) != make_piece(WHITE, KING))
       || (count<KING>(BLACK) && piece_on(square<KING>(BLACK)) != make_piece(BLACK, KING))
-      || (ep_squares() & ~var->enPassantRegion))
+      || (ep_squares() & ~(var->enPassantRegion[WHITE] | var->enPassantRegion[BLACK])))
       assert(0 && "pos_is_ok: Default");
 
   if (Fast)
