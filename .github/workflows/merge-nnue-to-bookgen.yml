@@ -32,11 +32,17 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      # Step 3: Fetch nnue branch
+      # Step 3: Configure ours merge driver
+      - name: Configure ours merge driver
+        run: |
+          git config merge.ours.driver true
+          git config merge.ours.name "Keep ours merge driver"
+
+      # Step 4: Fetch nnue branch
       - name: Fetch nnue branch
         run: git fetch origin nnue:nnue
 
-      # Step 4: Merge nnue into bookgen
+      # Step 5: Merge nnue into bookgen
       - name: Merge nnue into bookgen
         id: merge
         run: |
@@ -50,14 +56,14 @@ jobs:
             exit 1
           fi
 
-      # Step 5: Push changes to bookgen
+      # Step 6: Push changes to bookgen
       - name: Push changes to bookgen
         if: steps.merge.outputs.merge_status == 'success'
         run: |
           echo "Pushing merged changes to bookgen..."
           git push origin bookgen
 
-      # Step 6: Report status
+      # Step 7: Report status
       - name: Merge successful
         if: steps.merge.outputs.merge_status == 'success'
         run: echo "Successfully merged nnue into bookgen and pushed changes."
