@@ -5,6 +5,10 @@
   "author": "Fabian Fichter",
   "license": "GPL-3.0",
   "homepage": "https://github.com/ianfab/fairy-stockfish.wasm",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fairy-stockfish/fairy-stockfish.wasm"
+  },
   "files": [
     "AUTHORS",
     "Copying.txt",
