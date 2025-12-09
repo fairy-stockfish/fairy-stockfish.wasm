@@ -109,11 +109,29 @@ jobs:
           name: no-embedded-nnue
           path: src/emscripten/public/stockfish*
 
-      - name: Publish to NPM
-        if: startsWith(github.ref, 'refs/tags/')
+  publish:
+    runs-on: ubuntu-24.04
+    needs: [lint, test, test-no-embedded-nnue]
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      id-token: write  # Required for OIDC authentication to npm
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: no-embedded-nnue
+          path: src/emscripten/public
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Update npm to support OIDC
+        run: npm install -g npm@latest
+
+      - name: Publish to NPM using OIDC
         working-directory: src/emscripten/public
-        run: |
-          npm config set //registry.npmjs.org/:_authToken ${NPM_TOKEN}
-          npm publish
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish
