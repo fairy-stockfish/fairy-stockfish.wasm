@@ -124,6 +124,11 @@ jobs:
           name: no-embedded-nnue
           path: src/emscripten/public
 
+      - name: Copy documentation files for npm package
+        run: |
+          cp AUTHORS src/emscripten/public/
+          cp Copying.txt src/emscripten/public/
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
