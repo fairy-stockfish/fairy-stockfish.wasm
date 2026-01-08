@@ -56,7 +56,7 @@ jobs:
           upstream_sync_branch: master
           upstream_sync_repo: fairy-stockfish/Fairy-Stockfish
           test_mode: ${{ inputs.test_mode || false }}
-          shallow_since: ${{ inputs.shallow_since || '1 month ago' }}
+          shallow_since: ${{ inputs.shallow_since || '1 year ago' }}
 
       # Step 4: Display sync status
       - name: New commits found
