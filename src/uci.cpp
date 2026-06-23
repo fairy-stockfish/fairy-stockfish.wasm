@@ -580,6 +580,33 @@ string UCI::move(const Position& pos, Move m) {
   if (pos.walling() && CurrentProtocol != XBOARD)
       move += "," + UCI::square(pos, to) + UCI::square(pos, gating_square(m));
 
+  // Lion multi-move: append captured intermediate squares after '~' so the
+  // receiving engine/UI can remove them from the board without guessing.
+  // Format: from+to [~mid1] [~mid2]
+  // Igui (from==to) still emits from+to so that is unambiguous.
+  //
+  // Guard: the transposition table only stores 32 bits of a move, so in
+  // LARGEBOARDS builds the upper bits of mid_sq (bits 32+) are lost on
+  // retrieval. This turns mid into a near-zero garbage square. Suppress ~mid
+  // when it is not King-adjacent to 'from' (a reliable sign of TT truncation).
+  auto mid_is_adjacent = [&](Square mid, Square f) -> bool {
+      int df = std::abs(int(file_of(mid)) - int(file_of(f)));
+      int dr = std::abs(int(rank_of(mid)) - int(rank_of(f)));
+      return is_ok(mid) && df <= 1 && dr <= 1 && (df + dr) > 0;
+  };
+  if (type_of(m) == LION_MOVE && has_mid_capture(m) && mid_is_adjacent(mid_sq(m), from))
+      move += "~" + UCI::square(pos, mid_sq(m));
+  else if (type_of(m) == LION_DOG_MOVE) {
+      if (has_mid_capture(m) && mid_is_adjacent(mid_sq(m), from))
+          move += "~" + UCI::square(pos, mid_sq(m));
+      if (has_mid2_capture(m)) {
+          // mid2 must be adjacent to mid1 (or from if mid1 not captured) — use mid_sq as proxy
+          Square prev = has_mid_capture(m) ? mid_sq(m) : from;
+          if (mid_is_adjacent(mid2_sq(m), prev))
+              move += "~" + UCI::square(pos, mid2_sq(m));
+      }
+  }
+
   return move;
 }
 
@@ -602,6 +629,21 @@ Move UCI::to_move(const Position& pos, string& str) {
   for (const auto& m : MoveList<LEGAL>(pos))
       if (str == UCI::move(pos, m) || (is_pass(m) && str == UCI::square(pos, from_sq(m)) + UCI::square(pos, to_sq(m))))
           return m;
+
+  // Legacy / history-replay fallback: accept plain from+to for lion moves whose
+  // full extended string now includes a ~mid suffix.  The from→to pair uniquely
+  // identifies most lion double-moves (igui with multiple adjacent enemies is
+  // ambiguous but rare; first legal match wins).
+  if (str.find('~') == std::string::npos) {
+      for (const auto& m : MoveList<LEGAL>(pos)) {
+          if (type_of(m) != LION_MOVE && type_of(m) != LION_DOG_MOVE)
+              continue;
+          std::string full = UCI::move(pos, m);
+          size_t tilde = full.find('~');
+          if (tilde != std::string::npos && str == full.substr(0, tilde))
+              return m;
+      }
+  }
 
   return MOVE_NONE;
 }

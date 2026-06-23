@@ -543,9 +543,11 @@ ifeq ($(optimize),yes)
 	endif
 
 	ifeq ($(comp),clang)
-		clangmajorversion = $(shell $(CXX) -dumpversion 2>/dev/null | cut -f1 -d.)
-		ifeq ($(shell expr $(clangmajorversion) \< 16),1)
-			CXXFLAGS += -fexperimental-new-pass-manager
+		ifneq ($(ARCH),wasm)
+			clangmajorversion = $(shell $(CXX) -dumpversion 2>/dev/null | cut -f1 -d.)
+			ifeq ($(shell expr $(clangmajorversion) \< 16),1)
+				CXXFLAGS += -fexperimental-new-pass-manager
+			endif
 		endif
 	endif
 endif

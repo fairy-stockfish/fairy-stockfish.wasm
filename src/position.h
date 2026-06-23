@@ -70,6 +70,12 @@ struct StateInfo {
   Bitboard   checkSquares[PIECE_TYPE_NB];
   Piece      capturedPiece;
   Square     captureSquare; // when != to_sq, e.g., en passant
+  Piece      capturedMidPiece;
+  bool       capturedMidPromoted;
+  Piece      unpromotedCapturedMidPiece;
+  Piece      capturedMid2Piece;           // Lion Dog: second mid capture
+  bool       capturedMid2Promoted;
+  Piece      unpromotedCapturedMid2Piece;
   Piece      promotionPawn;
   Bitboard   nonSlidingRiders;
   Bitboard   flippedPieces;
@@ -135,6 +141,7 @@ public:
   bool sittuyin_promotion() const;
   int promotion_limit(PieceType pt) const;
   PieceType promoted_piece_type(PieceType pt) const;
+  PieceType unpromoted_piece_type(PieceType pt) const;
   bool piece_promotion_on_capture() const;
   bool mandatory_pawn_promotion() const;
   bool mandatory_piece_promotion() const;
@@ -191,6 +198,10 @@ public:
   Bitboard walling_region(Color c) const;
   bool seirawan_gating() const;
   bool cambodian_moves() const;
+  PieceSet lion_move_types() const;
+  PieceSet lion_dog_move_types() const;
+  PieceSet hook_mover_types() const;
+  PieceSet goblin_hook_types() const;
   Bitboard diagonal_lines() const;
   bool pass(Color c) const;
   bool pass_on_stalemate(Color c) const;
@@ -481,6 +492,11 @@ inline int Position::promotion_limit(PieceType pt) const {
 inline PieceType Position::promoted_piece_type(PieceType pt) const {
   assert(var != nullptr);
   return var->promotedPieceType[pt];
+}
+
+inline PieceType Position::unpromoted_piece_type(PieceType pt) const {
+  assert(var != nullptr);
+  return var->unpromotedPieceType[pt];
 }
 
 inline bool Position::piece_promotion_on_capture() const {
@@ -871,6 +887,26 @@ inline bool Position::seirawan_gating() const {
 inline bool Position::cambodian_moves() const {
   assert(var != nullptr);
   return var->cambodianMoves;
+}
+
+inline PieceSet Position::lion_move_types() const {
+  assert(var != nullptr);
+  return var->lionMoveTypes;
+}
+
+inline PieceSet Position::lion_dog_move_types() const {
+  assert(var != nullptr);
+  return var->lionDogMoveTypes;
+}
+
+inline PieceSet Position::hook_mover_types() const {
+  assert(var != nullptr);
+  return var->hookMoverTypes;
+}
+
+inline PieceSet Position::goblin_hook_types() const {
+  assert(var != nullptr);
+  return var->goblinHookTypes;
 }
 
 inline Bitboard Position::diagonal_lines() const {
@@ -1436,12 +1472,14 @@ inline bool Position::is_chess960() const {
 
 inline bool Position::capture_or_promotion(Move m) const {
   assert(is_ok(m));
+  if (type_of(m) == LION_MOVE) return has_mid_capture(m) || !empty(to_sq(m));
   return type_of(m) == PROMOTION || type_of(m) == EN_PASSANT || (type_of(m) != CASTLING && !empty(to_sq(m)));
 }
 
 inline bool Position::capture(Move m) const {
   assert(is_ok(m));
   // Castling is encoded as "king captures rook"
+  if (type_of(m) == LION_MOVE) return has_mid_capture(m) || (!empty(to_sq(m)) && from_sq(m) != to_sq(m));
   return (!empty(to_sq(m)) && type_of(m) != CASTLING && from_sq(m) != to_sq(m)) || type_of(m) == EN_PASSANT;
 }
 

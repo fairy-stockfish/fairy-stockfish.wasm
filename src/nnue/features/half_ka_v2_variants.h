@@ -55,7 +55,15 @@ namespace Stockfish::Eval::NNUE::Features {
     static constexpr std::uint32_t HashValue = 0x5f234cb8u;
 
     // Number of feature dimensions
-    static constexpr IndexType Dimensions = static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(SQUARE_NB) * 19;
+    // NNUE_SQUARE_NB caps this at the original LARGEBOARDS maximum (12x10=120).
+    // Boards up to 17x17 are supported but NNUE for them is disabled/untrained.
+    // The runtime value comes from nnueDimensions (via get_dimensions()).
+#ifdef LARGEBOARDS
+    static constexpr IndexType NNUE_SQUARE_NB = 120;
+#else
+    static constexpr IndexType NNUE_SQUARE_NB = SQUARE_NB;
+#endif
+    static constexpr IndexType Dimensions = static_cast<IndexType>(NNUE_SQUARE_NB) * static_cast<IndexType>(NNUE_SQUARE_NB) * 19;
 
     static IndexType get_dimensions() {
       return currentNnueVariant->nnueDimensions;

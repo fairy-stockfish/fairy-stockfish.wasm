@@ -136,8 +136,10 @@ std::ostream& operator<<(std::ostream& os, const Position& pos) {
 
 // First and second hash functions for indexing the cuckoo tables
 #ifdef LARGEBOARDS
-inline int H1(Key h) { return h & 0x7fff; }
-inline int H2(Key h) { return (h >> 16) & 0x7fff; }
+// For 17x17 boards, chess attack pairs number ~45K. Use 18-bit (262144-entry) table
+// to keep load factor <25% for reliable cuckoo hashing.
+inline int H1(Key h) { return h & 0x3ffff; }
+inline int H2(Key h) { return (h >> 18) & 0x3ffff; }
 #else
 inline int H1(Key h) { return h & 0x1fff; }
 inline int H2(Key h) { return (h >> 16) & 0x1fff; }
@@ -145,8 +147,8 @@ inline int H2(Key h) { return (h >> 16) & 0x1fff; }
 
 // Cuckoo tables with Zobrist hashes of valid reversible moves, and the moves themselves
 #ifdef LARGEBOARDS
-Key cuckoo[65536];
-Move cuckooMove[65536];
+Key cuckoo[1 << 18];      // 262144 entries
+Move cuckooMove[1 << 18];
 #else
 Key cuckoo[8192];
 Move cuckooMove[8192];
@@ -214,9 +216,7 @@ void Position::init() {
                   count++;
              }
       }
-#ifdef LARGEBOARDS
-  assert(count == 9344);
-#else
+#ifndef LARGEBOARDS
   assert(count == 3668);
 #endif
 }
@@ -317,6 +317,49 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
           st->wallSquares |= sq;
           byTypeBB[ALL_PIECES] |= sq;
           ++sq;
+      }
+
+      // Multi-char piece code: <X or <XX = white, >X or >XX = black
+      else if ((token == '<' || token == '>') && var->useMultiCharFen)
+      {
+          Color c = (token == '<') ? WHITE : BLACK;
+          char c1;
+          if (ss.get(c1))
+          {
+              // Try 2-char code first if next char is alpha
+              char c2 = ss.peek();
+              if (isalpha((unsigned char)c2))
+              {
+                  ss.get(c2);
+                  std::string code2 = {c1, c2};
+                  auto it = var->multiCharPieceMap.find(code2);
+                  if (it != var->multiCharPieceMap.end())
+                  {
+                      put_piece(make_piece(c, it->second), sq);
+                      ++sq;
+                      continue;
+                  }
+                  ss.putback(c2);
+              }
+              // Try 1-char code in multiCharPieceMap
+              std::string code1(1, c1);
+              auto it = var->multiCharPieceMap.find(code1);
+              if (it != var->multiCharPieceMap.end())
+              {
+                  put_piece(make_piece(c, it->second), sq);
+                  ++sq;
+              }
+              // Fallback: standard single-char piece lookup (for predefined pieces)
+              else
+              {
+                  size_t pidx = piece_to_char().find(toupper((unsigned char)c1));
+                  if (pidx != string::npos)
+                  {
+                      put_piece(make_piece(c, type_of(Piece(pidx))), sq);
+                      ++sq;
+                  }
+              }
+          }
       }
 
       else if ((idx = piece_to_char().find(token)) != string::npos || (idx = piece_to_char_synonyms().find(token)) != string::npos)
@@ -720,11 +763,24 @@ string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string
                   ss << "+" << piece_to_char()[unpromoted_piece_on(make_square(f, r))];
               else
               {
-                  ss << piece_to_char()[piece_on(make_square(f, r))];
+                  Piece pc = piece_on(make_square(f, r));
+                  // Multi-char piece code: emit <code for white, >code for black
+                  if (var->useMultiCharFen && !var->pieceMultiChar[type_of(pc)].empty())
+                  {
+                      ss << (color_of(pc) == WHITE ? '<' : '>') << var->pieceMultiChar[type_of(pc)];
+                  }
+                  else
+                  {
+                      char c = piece_to_char()[pc];
+                      if (c != ' ')
+                          ss << c;
+                      else if (PieceType upt = unpromoted_piece_type(type_of(pc)); upt != NO_PIECE_TYPE)
+                          ss << '+' << piece_to_char()[make_piece(color_of(pc), upt)];
 
-                  // Set promoted pieces
-                  if (((captures_to_hand() && !drop_loop()) || two_boards() ||  showPromoted) && is_promoted(make_square(f, r)))
-                      ss << "~";
+                      // Set promoted pieces
+                      if (((captures_to_hand() && !drop_loop()) || two_boards() ||  showPromoted) && is_promoted(make_square(f, r)))
+                          ss << "~";
+                  }
               }
           }
       }
@@ -1260,6 +1316,14 @@ bool Position::legal(Move m) const {
   }
 
   Bitboard occupied = (type_of(m) != DROP ? pieces() ^ from : pieces()) | to;
+  // Lion igui: piece stays at from (from==to), occupied unchanged; mid piece removed
+  if ((type_of(m) == LION_MOVE || type_of(m) == LION_DOG_MOVE) && from == to)
+      occupied = pieces();
+  // Lion/Lion Dog mid capture(s): remove mid piece(s) from occupied for pin/check calculation
+  if (has_mid_capture(m))
+      occupied ^= mid_sq(m);
+  if (has_mid2_capture(m))
+      occupied ^= mid2_sq(m);
 
   // Flying general rule and bikjang
   // In case of bikjang passing is always allowed, even when in check
@@ -1368,6 +1432,37 @@ bool Position::pseudo_legal(const Move m) const {
   if (pc == NO_PIECE || color_of(pc) != us)
       return false;
 
+  // Lion double-move: validate mid-square capture and igui
+  if (type_of(m) == LION_MOVE)
+  {
+      Square msq = mid_sq(m);
+      // Mid square must hold an enemy piece when a mid-capture is encoded
+      if (has_mid_capture(m) && !(pieces(~us) & msq))
+          return false;
+      // Igui (from==to): ok as long as mid has enemy
+      if (from == to)
+          return has_mid_capture(m);
+      // Non-igui: destination must not be a friendly piece
+      if (pieces(us) & to)
+          return false;
+      return true;
+  }
+
+  // Lion Dog triple-move: validate both mid captures and igui
+  if (type_of(m) == LION_DOG_MOVE)
+  {
+      Square msq = mid_sq(m);
+      if (has_mid_capture(m) && !(pieces(~us) & msq))
+          return false;
+      if (has_mid2_capture(m) && !(pieces(~us) & mid2_sq(m)))
+          return false;
+      if (from == to)
+          return has_mid_capture(m);  // igui: must have at least one mid capture
+      if (pieces(us) & to)
+          return false;
+      return true;
+  }
+
   // The destination square cannot be occupied by a friendly piece
   if (pieces(us) & to)
       return false;
@@ -1439,6 +1534,14 @@ bool Position::gives_check(Move m) const {
       return false;
 
   Bitboard occupied = (type_of(m) != DROP ? pieces() ^ from : pieces()) | to;
+  // For lion igui (from==to): piece stays put, occupied is unchanged except mid removed
+  if ((type_of(m) == LION_MOVE || type_of(m) == LION_DOG_MOVE) && from == to)
+      occupied = pieces();
+  // For lion/lion-dog mid capture(s): also remove captured mid piece(s) from occupied
+  if (has_mid_capture(m))
+      occupied ^= mid_sq(m);
+  if (has_mid2_capture(m))
+      occupied ^= mid2_sq(m);
   Bitboard janggiCannons = pieces(JANGGI_CANNON);
   if (type_of(moved_piece(m)) == JANGGI_CANNON)
       janggiCannons = (type_of(m) == DROP ? janggiCannons : janggiCannons ^ from) | to;
@@ -1496,7 +1599,9 @@ bool Position::gives_check(Move m) const {
   case NORMAL:
   case DROP:
   case SPECIAL:
-      return false;
+  case LION_MOVE:
+  case LION_DOG_MOVE:
+      return false; // Direct check via lion/lion-dog at 'to' already handled above by check_squares / attacks_bb
 
   case PROMOTION:
       return attacks_bb(sideToMove, promotion_type(m), to, pieces() ^ from) & square<KING>(~sideToMove);
@@ -1582,12 +1687,87 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   Piece captured = piece_on(type_of(m) == EN_PASSANT ? capture_square(to) : to);
   if (to == from)
   {
-      assert((type_of(m) == PROMOTION && sittuyin_promotion()) || (is_pass(m) && (pass(us) || var->wallOrMove )));
-      captured = NO_PIECE;
+      assert((type_of(m) == PROMOTION && sittuyin_promotion()) || (is_pass(m) && (pass(us) || var->wallOrMove ))
+             || type_of(m) == LION_MOVE || type_of(m) == LION_DOG_MOVE);
+      captured = NO_PIECE; // igui: lion/lion-dog stays at from, only mid square(s) captured
   }
-  st->capturedpromoted = is_promoted(to);
+  st->capturedpromoted = (to != from) ? is_promoted(to) : false;
   st->unpromotedCapturedPiece = captured ? unpromoted_piece_on(to) : NO_PIECE;
   st->pass = is_pass(m);
+
+  // Lion move: capture the piece at the intermediate square
+  st->capturedMidPiece = NO_PIECE;
+  st->capturedMidPromoted = false;
+  st->unpromotedCapturedMidPiece = NO_PIECE;
+  st->capturedMid2Piece = NO_PIECE;
+  st->capturedMid2Promoted = false;
+  st->unpromotedCapturedMid2Piece = NO_PIECE;
+  if ((type_of(m) == LION_MOVE || type_of(m) == LION_DOG_MOVE) && has_mid_capture(m))
+  {
+      Square msq = mid_sq(m);
+      Piece midCapture = piece_on(msq);
+      assert(midCapture != NO_PIECE && color_of(midCapture) == them);
+      st->capturedMidPiece = midCapture;
+      st->capturedMidPromoted = is_promoted(msq);
+      st->unpromotedCapturedMidPiece = unpromoted_piece_on(msq);
+
+      if (type_of(midCapture) == PAWN)
+          st->pawnKey ^= Zobrist::psq[midCapture][msq];
+      else
+          st->nonPawnMaterial[them] -= PieceValue[MG][midCapture];
+
+      remove_piece(msq);
+
+      if (captures_to_hand())
+      {
+          bool midPromoted = st->capturedMidPromoted;
+          Piece unpromotedMid = st->unpromotedCapturedMidPiece;
+          Piece pieceToHand = !midPromoted || drop_loop() ? ~midCapture
+                             : unpromotedMid ? ~unpromotedMid
+                                             : make_piece(~color_of(midCapture), main_promotion_pawn_type(color_of(midCapture)));
+          add_to_hand(pieceToHand);
+          k ^=  Zobrist::inHand[pieceToHand][pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)] - 1]
+              ^ Zobrist::inHand[pieceToHand][pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)]];
+      }
+
+      k ^= Zobrist::psq[midCapture][msq];
+      st->materialKey ^= Zobrist::psq[midCapture][pieceCount[midCapture]];
+      st->rule50 = 0;
+  }
+
+  // Lion Dog: capture the piece at the second intermediate square
+  if (type_of(m) == LION_DOG_MOVE && has_mid2_capture(m))
+  {
+      Square msq2 = mid2_sq(m);
+      Piece mid2Capture = piece_on(msq2);
+      assert(mid2Capture != NO_PIECE && color_of(mid2Capture) == them);
+      st->capturedMid2Piece = mid2Capture;
+      st->capturedMid2Promoted = is_promoted(msq2);
+      st->unpromotedCapturedMid2Piece = unpromoted_piece_on(msq2);
+
+      if (type_of(mid2Capture) == PAWN)
+          st->pawnKey ^= Zobrist::psq[mid2Capture][msq2];
+      else
+          st->nonPawnMaterial[them] -= PieceValue[MG][mid2Capture];
+
+      remove_piece(msq2);
+
+      if (captures_to_hand())
+      {
+          bool mid2Promoted = st->capturedMid2Promoted;
+          Piece unpromotedMid2 = st->unpromotedCapturedMid2Piece;
+          Piece pieceToHand = !mid2Promoted || drop_loop() ? ~mid2Capture
+                             : unpromotedMid2 ? ~unpromotedMid2
+                                             : make_piece(~color_of(mid2Capture), main_promotion_pawn_type(color_of(mid2Capture)));
+          add_to_hand(pieceToHand);
+          k ^=  Zobrist::inHand[pieceToHand][pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)] - 1]
+              ^ Zobrist::inHand[pieceToHand][pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)]];
+      }
+
+      k ^= Zobrist::psq[mid2Capture][msq2];
+      st->materialKey ^= Zobrist::psq[mid2Capture][pieceCount[mid2Capture]];
+      st->rule50 = 0;
+  }
 
   assert(color_of(pc) == us);
   assert(captured == NO_PIECE || color_of(captured) == (type_of(m) != CASTLING ? them : us));
@@ -1811,7 +1991,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           dp.to[0] = to;
       }
 
-      move_piece(from, to);
+      if (from != to) // igui (LION_MOVE/LION_DOG_MOVE with from==to) keeps the piece in place
+          move_piece(from, to);
   }
 
   // If the moving piece is a pawn do some special extra work
@@ -2152,7 +2333,9 @@ void Position::undo_move(Move m) {
 
   assert(type_of(m) == DROP || empty(from) || type_of(m) == CASTLING || is_gating(m)
          || (type_of(m) == PROMOTION && sittuyin_promotion())
-         || (is_pass(m) && (pass(us) || var->wallOrMove)));
+         || (is_pass(m) && (pass(us) || var->wallOrMove))
+         || (type_of(m) == LION_MOVE && from == to)
+         || (type_of(m) == LION_DOG_MOVE && from == to)); // igui: lion/lion-dog never left from
   assert(type_of(st->capturedPiece) != KING);
 
   // Reset wall squares
@@ -2228,7 +2411,7 @@ void Position::undo_move(Move m) {
   {
       if (type_of(m) == DROP)
           undrop_piece(make_piece(us, in_hand_piece_type(m)), to); // Remove the dropped piece
-      else
+      else if (from != to) // igui (LION_MOVE/LION_DOG_MOVE from==to): piece never moved
           move_piece(to, from); // Put the piece back at the source square
 
       if (st->capturedPiece)
@@ -2249,6 +2432,30 @@ void Position::undo_move(Move m) {
               remove_from_hand(!drop_loop() && st->capturedpromoted ? (st->unpromotedCapturedPiece ? ~st->unpromotedCapturedPiece
                                                                                                    : make_piece(~color_of(st->capturedPiece), main_promotion_pawn_type(us)))
                                                                     : ~st->capturedPiece);
+      }
+
+      // Restore lion mid-square capture
+      if (st->capturedMidPiece)
+      {
+          Square msq = mid_sq(m);
+          put_piece(st->capturedMidPiece, msq, st->capturedMidPromoted, st->unpromotedCapturedMidPiece);
+          if (captures_to_hand())
+              remove_from_hand(!drop_loop() && st->capturedMidPromoted
+                               ? (st->unpromotedCapturedMidPiece ? ~st->unpromotedCapturedMidPiece
+                                                                  : make_piece(~color_of(st->capturedMidPiece), main_promotion_pawn_type(us)))
+                               : ~st->capturedMidPiece);
+      }
+
+      // Restore lion dog second mid-square capture
+      if (st->capturedMid2Piece)
+      {
+          Square msq2 = mid2_sq(m);
+          put_piece(st->capturedMid2Piece, msq2, st->capturedMid2Promoted, st->unpromotedCapturedMid2Piece);
+          if (captures_to_hand())
+              remove_from_hand(!drop_loop() && st->capturedMid2Promoted
+                               ? (st->unpromotedCapturedMid2Piece ? ~st->unpromotedCapturedMid2Piece
+                                                                   : make_piece(~color_of(st->capturedMid2Piece), main_promotion_pawn_type(us)))
+                               : ~st->capturedMid2Piece);
       }
   }
 

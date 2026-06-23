@@ -40,6 +40,15 @@ Bitboard BoardSizeBB[FILE_NB][RANK_NB];
 RiderType AttackRiderTypes[PIECE_TYPE_NB];
 RiderType MoveRiderTypes[2][PIECE_TYPE_NB];
 
+#ifdef LARGEBOARDS
+// DarkSquares and KingFlank are runtime-initialized for LARGEBOARDS.
+Bitboard DarkSquares;
+Bitboard KingFlank[FILE_NB];
+#endif
+
+// Magic tables are only used for non-LARGEBOARDS builds.
+// LARGEBOARDS uses classical ray-walking (rider_attacks_bb in bitboard.h).
+#ifndef LARGEBOARDS
 Magic RookMagicsH[SQUARE_NB];
 Magic RookMagicsV[SQUARE_NB];
 Magic BishopMagics[SQUARE_NB];
@@ -58,26 +67,29 @@ Magic GrasshopperMagicsD[SQUARE_NB];
 Magic* magics[] = {BishopMagics, RookMagicsH, RookMagicsV, CannonMagicsH, CannonMagicsV,
                    LameDabbabaMagics, HorseMagics, ElephantMagics, JanggiElephantMagics, CannonDiagMagics, NightriderMagics,
                    GrasshopperMagicsH, GrasshopperMagicsV, GrasshopperMagicsD};
+#else
+// For LARGEBOARDS: Magic arrays are defined but never initialized or used.
+// Classical ray-walking is used instead; these satisfy the extern declarations in bitboard.h.
+Magic RookMagicsH[SQUARE_NB], RookMagicsV[SQUARE_NB], BishopMagics[SQUARE_NB];
+Magic CannonMagicsH[SQUARE_NB], CannonMagicsV[SQUARE_NB];
+Magic LameDabbabaMagics[SQUARE_NB], HorseMagics[SQUARE_NB], ElephantMagics[SQUARE_NB], JanggiElephantMagics[SQUARE_NB];
+Magic CannonDiagMagics[SQUARE_NB], NightriderMagics[SQUARE_NB];
+Magic GrasshopperMagicsH[SQUARE_NB], GrasshopperMagicsV[SQUARE_NB], GrasshopperMagicsD[SQUARE_NB];
+Magic* magics[] = {BishopMagics, RookMagicsH, RookMagicsV, CannonMagicsH, CannonMagicsV,
+                   LameDabbabaMagics, HorseMagics, ElephantMagics, JanggiElephantMagics, CannonDiagMagics, NightriderMagics,
+                   GrasshopperMagicsH, GrasshopperMagicsV, GrasshopperMagicsD};
+#endif
 
 namespace {
 
-// Some magics need to be split in order to reduce memory consumption.
-// Otherwise on a 12x10 board they can be >100 MB.
+// Magic attack tables. Not used for LARGEBOARDS (classical ray-walking is used instead).
 #ifdef LARGEBOARDS
-  Bitboard RookTableH[0x11800];  // To store horizontal rook attacks
-  Bitboard RookTableV[0x4800];  // To store vertical rook attacks
-  Bitboard BishopTable[0x33C00]; // To store bishop attacks
-  Bitboard CannonTableH[0x11800];  // To store horizontal cannon attacks
-  Bitboard CannonTableV[0x4800];  // To store vertical cannon attacks
-  Bitboard LameDabbabaTable[0x500];  // To store lame dabbaba attacks
-  Bitboard HorseTable[0x500];  // To store horse attacks
-  Bitboard ElephantTable[0x400];  // To store elephant attacks
-  Bitboard JanggiElephantTable[0x1C000];  // To store janggi elephant attacks
-  Bitboard CannonDiagTable[0x33C00]; // To store diagonal cannon attacks
-  Bitboard NightriderTable[0x70200]; // To store nightrider attacks
-  Bitboard GrasshopperTableH[0x11800];  // To store horizontal grasshopper attacks
-  Bitboard GrasshopperTableV[0x4800];  // To store vertical grasshopper attacks
-  Bitboard GrasshopperTableD[0x33C00]; // To store diagonal grasshopper attacks
+  // Stub arrays of size 1 — init_magics is never called for LARGEBOARDS.
+  Bitboard RookTableH[1], RookTableV[1], BishopTable[1];
+  Bitboard CannonTableH[1], CannonTableV[1];
+  Bitboard LameDabbabaTable[1], HorseTable[1], ElephantTable[1], JanggiElephantTable[1];
+  Bitboard CannonDiagTable[1], NightriderTable[1];
+  Bitboard GrasshopperTableH[1], GrasshopperTableV[1], GrasshopperTableD[1];
 #else
   Bitboard RookTableH[0xA00];  // To store horizontal rook attacks
   Bitboard RookTableV[0xA00];  // To store vertical rook attacks
@@ -213,16 +225,29 @@ inline Bitboard safe_destination(Square s, int step) {
 
 std::string Bitboards::pretty(Bitboard b) {
 
-  std::string s = "+---+---+---+---+---+---+---+---+---+---+---+---+\n";
+  // Build a separator row sized for the actual max file count.
+  std::string sep = "+";
+  for (File f = FILE_A; f <= FILE_MAX; ++f) sep += "---+";
+  sep += "\n";
 
+  std::string s = sep;
   for (Rank r = RANK_MAX; r >= RANK_1; --r)
   {
       for (File f = FILE_A; f <= FILE_MAX; ++f)
           s += b & make_square(f, r) ? "| X " : "|   ";
 
-      s += "| " + std::to_string(1 + r) + "\n+---+---+---+---+---+---+---+---+---+---+---+---+\n";
+      s += "| " + std::to_string(1 + r) + "\n" + sep;
   }
-  s += "  a   b   c   d   e   f   g   h   i   j   k   l\n";
+
+  // File labels: a-z then A-Z (Fairy-Stockfish convention)
+  s += " ";
+  for (File f = FILE_A; f <= FILE_MAX; ++f) {
+      char label = (f < 26) ? ('a' + f) : ('A' + f - 26);
+      s += "  ";
+      s += label;
+      s += " ";
+  }
+  s += "\n";
 
   return s;
 }
@@ -330,6 +355,9 @@ void Bitboards::init() {
       for (Square s2 = SQ_A1; s2 <= SQ_MAX; ++s2)
               SquareDistance[s1][s2] = std::max(distance<File>(s1, s2), distance<Rank>(s1, s2));
 
+#ifndef LARGEBOARDS
+  // Magic bitboard initialization — only for non-LARGEBOARDS builds.
+  // LARGEBOARDS uses classical ray-walking (rider_attacks_bb in bitboard.h).
 #ifdef PRECOMPUTED_MAGICS
   init_magics<RIDER>(RookTableH, RookMagicsH, RookDirectionsH, RookMagicHInit);
   init_magics<RIDER>(RookTableV, RookMagicsV, RookDirectionsV, RookMagicVInit);
@@ -361,6 +389,22 @@ void Bitboards::init() {
   init_magics<HOPPER>(GrasshopperTableV, GrasshopperMagicsV, GrasshopperDirectionsV);
   init_magics<HOPPER>(GrasshopperTableD, GrasshopperMagicsD, GrasshopperDirectionsD);
 #endif
+#else // LARGEBOARDS
+  // Initialize runtime constants that depend on board size.
+  // DarkSquares: squares where (rank + file) is odd.
+  for (Square s = SQ_A1; s <= SQ_MAX; ++s)
+      if ((rank_of(s) + file_of(s)) & 1)
+          DarkSquares |= square_bb(s);
+
+  // KingFlank: file groupings for king-safety evaluation.
+  // Note: evaluate.cpp falls back to adjacent_files_bb for boards wider than 8 files,
+  // so these values are only exercised by 8-file variants (which can't exist under LARGEBOARDS).
+  // We still initialize them to something sensible.
+  for (File f = FILE_A; f < FILE_NB; ++f)
+      KingFlank[f] = file_bb(f)
+                   | (f > FILE_A     ? file_bb(File(f - 1)) : Bitboard(0))
+                   | (f < FILE_NB-1  ? file_bb(File(f + 1)) : Bitboard(0));
+#endif
 
   init_pieces();
 
@@ -381,10 +425,12 @@ void Bitboards::init() {
 
 namespace {
 
+#ifndef LARGEBOARDS
   // init_magics() computes all rook and bishop attacks at startup. Magic
   // bitboards are used to look up attacks of sliding pieces. As a reference see
   // www.chessprogramming.org/Magic_Bitboards. In particular, here we use the so
   // called "fancy" approach.
+  // For LARGEBOARDS, classical ray-walking is used instead (rider_attacks_bb in bitboard.h).
 
   template <MovementType MT>
 #ifdef PRECOMPUTED_MAGICS
@@ -395,13 +441,8 @@ namespace {
 
     // Optimal PRNG seeds to pick the correct magics in the shortest time
 #ifndef PRECOMPUTED_MAGICS
-#ifdef LARGEBOARDS
-    int seeds[][RANK_NB] = { { 734, 10316, 55013, 32803, 12281, 15100,  16645, 255, 346, 89123 },
-                             { 734, 10316, 55013, 32803, 12281, 15100,  16645, 255, 346, 89123 } };
-#else
     int seeds[][RANK_NB] = { { 8977, 44560, 54343, 38998,  5731, 95205, 104912, 17020 },
                              {  728, 10316, 55013, 32803, 12281, 15100,  16645,   255 } };
-#endif
 #endif
 
     Bitboard* occupancy = new Bitboard[1 << (FILE_NB + RANK_NB - 4)];
@@ -423,11 +464,7 @@ namespace {
         Magic& m = magics[s];
         // The mask for hoppers is unlimited distance, even if the hopper is limited distance (e.g., grasshopper)
         m.mask  = (MT == LAME_LEAPER ? lame_leaper_path(directions, s) : sliding_attack<MT == HOPPER ? HOPPER_RANGE : MT>(directions, s, 0)) & ~edges;
-#ifdef LARGEBOARDS
-        m.shift = 128 - popcount(m.mask);
-#else
         m.shift = (Is64Bit ? 64 : 32) - popcount(m.mask);
-#endif
 
         // Set the offset for the attacks table of the square. We have individual
         // table sizes for each square with "Fancy Magic Bitboards".
@@ -460,12 +497,8 @@ namespace {
         {
             for (m.magic = 0; popcount((m.magic * m.mask) >> (SQUARE_NB - FILE_NB)) < FILE_NB - 2; )
             {
-#ifdef LARGEBOARDS
 #ifdef PRECOMPUTED_MAGICS
                 m.magic = magicsInit[s];
-#else
-                m.magic = (rng.sparse_rand<Bitboard>() << 64) ^ rng.sparse_rand<Bitboard>();
-#endif
 #else
                 m.magic = rng.sparse_rand<Bitboard>();
 #endif
@@ -496,6 +529,7 @@ namespace {
     delete[] reference;
     delete[] epoch;
   }
+#endif // !LARGEBOARDS
 }
 
 } // namespace Stockfish

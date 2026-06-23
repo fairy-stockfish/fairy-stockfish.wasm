@@ -16,12 +16,11 @@ EM_CXXFLAGS +=
 EM_LDFLAGS += \
 	--pre-js emscripten/preamble.js \
 	-s MODULARIZE=1 -s EXPORT_NAME="Stockfish" -s ENVIRONMENT=web,worker,node \
-	-s STRICT=1 \
 	-s ASYNCIFY=1 -s 'ASYNCIFY_IMPORTS=["emscripten_utils_getline_impl"]' \
-	-s USE_PTHREADS=1 \
+	-pthread \
 	-s PROXY_TO_PTHREAD=1 \
 	-s ALLOW_MEMORY_GROWTH=1 -s INITIAL_MEMORY=$$((1 << 27)) -s MAXIMUM_MEMORY=$$((1 << 31)) \
-	-s FILESYSTEM=1 -s EXTRA_EXPORTED_RUNTIME_METHODS=["FS"] \
+	-s FILESYSTEM=1 -s EXPORTED_RUNTIME_METHODS=["FS"] \
 	-s ALLOW_UNIMPLEMENTED_SYSCALLS
 
 ifeq ($(minify_js),yes)
@@ -72,7 +71,7 @@ endif
 
 emscripten_copy_files:
 	cp -f ../AUTHORS ../Copying.txt stockfish.js stockfish.wasm emscripten/public
-	cat stockfish.worker.js emscripten/worker-postamble.js > emscripten/public/stockfish.worker.js
+	if [ -f stockfish.worker.js ] && [ -f emscripten/worker-postamble.js ]; then cat stockfish.worker.js emscripten/worker-postamble.js > emscripten/public/stockfish.worker.js; fi
 
 emscripten_build: build emscripten_copy_files
 

@@ -238,6 +238,67 @@ template <bool Current, class T> bool VariantParser<DoCheck>::parse_attribute(co
 }
 
 template <bool DoCheck>
+template <bool Current, class T> bool VariantParser<DoCheck>::parse_attribute(const std::string& key, T& target, std::string pieceToChar, const std::map<std::string, PieceType>& multiCharMap) {
+    const auto& it = config.find(key);
+    if (it != config.end())
+    {
+        target = T();
+        char token = '-';
+        bool valid = true;
+        std::stringstream ss(it->second);
+        while (ss >> token)
+        {
+            if (token == '-') break;
+            if (token == '*') { set(PieceType(ALL_PIECES), target); continue; }
+
+            // Try 2-char piece code first when next char is also alpha (avoids false single-char match)
+            if (!multiCharMap.empty() && isalpha((unsigned char)token))
+            {
+                char c2 = ss.peek();
+                if (isalpha((unsigned char)c2))
+                {
+                    ss.get(c2);
+                    std::string code = {(char)toupper(token), c2};
+                    auto mapIt = multiCharMap.find(code);
+                    if (mapIt == multiCharMap.end()) {
+                        code[1] = (char)tolower(c2);
+                        mapIt = multiCharMap.find(code);
+                    }
+                    if (mapIt != multiCharMap.end()) { set(mapIt->second, target); continue; }
+                    ss.putback(c2);
+                }
+            }
+
+            size_t idx = pieceToChar.find(toupper(token));
+            if (idx != std::string::npos) { set(PieceType(idx), target); continue; }
+
+            // Try 2-char piece code (next char is not alpha, or not in multiCharMap above)
+            if (!multiCharMap.empty() && isalpha((unsigned char)token))
+            {
+                char c2;
+                if (ss.get(c2))
+                {
+                    std::string code = {(char)toupper(token), c2};
+                    auto mapIt = multiCharMap.find(code);
+                    if (mapIt == multiCharMap.end()) {
+                        code[1] = (char)tolower(c2);
+                        mapIt = multiCharMap.find(code);
+                    }
+                    if (mapIt != multiCharMap.end()) { set(mapIt->second, target); continue; }
+                    ss.putback(c2);
+                }
+            }
+            valid = false;
+            if (DoCheck)
+                std::cerr << key << " - Invalid piece type: " << token << std::endl;
+            break;
+        }
+        return valid || token == '-';
+    }
+    return false;
+}
+
+template <bool DoCheck>
 Variant* VariantParser<DoCheck>::parse() {
     Variant* v = new Variant();
     v->reset_pieces();
@@ -261,40 +322,60 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
         const auto& keyValue = config.find(name);
         if (keyValue != config.end() && !keyValue->second.empty())
         {
-            if (isalpha(keyValue->second.at(0)))
-                v->add_piece(pt, keyValue->second.at(0));
+            const std::string& val = keyValue->second;
+            // Detect 2-char piece code: "XX:betza" where both X are alpha and 3rd char is ':'
+            bool is2char = is_custom(pt)
+                           && val.size() >= 3
+                           && isalpha((unsigned char)val.at(0))
+                           && isalpha((unsigned char)val.at(1))
+                           && val.at(2) == ':';
+            if (is2char)
+            {
+                std::string code = val.substr(0, 2);
+                std::string betza = val.size() > 3 ? val.substr(3) : "";
+                v->add_piece(pt, code, betza);
+                if (betza.find('e') != std::string::npos)
+                {
+                    v->enPassantTypes[WHITE] |= piece_set(pt);
+                    v->enPassantTypes[BLACK] |= piece_set(pt);
+                }
+            }
+            else if (isalpha((unsigned char)val.at(0)))
+            {
+                v->add_piece(pt, val.at(0));
+                // betza
+                if (is_custom(pt))
+                {
+                    if (val.size() > 1)
+                    {
+                        v->customPiece[pt - CUSTOM_PIECES] = val.substr(2);
+                        // Is there an en passant flag in the Betza notation?
+                        if (v->customPiece[pt - CUSTOM_PIECES].find('e') != std::string::npos)
+                        {
+                            v->enPassantTypes[WHITE] |= piece_set(pt);
+                            v->enPassantTypes[BLACK] |= piece_set(pt);
+                        }
+                    }
+                    else if (DoCheck)
+                        std::cerr << name << " - Missing Betza move notation" << std::endl;
+                }
+                else if (pt == KING)
+                {
+                    if (val.size() > 1)
+                    {
+                        // custom royal piece
+                        v->customPiece[CUSTOM_PIECES_ROYAL - CUSTOM_PIECES] = val.substr(2);
+                        v->kingType = CUSTOM_PIECES_ROYAL;
+                    }
+                    else
+                        v->kingType = KING;
+                }
+            }
             else
             {
-                if (DoCheck && keyValue->second.at(0) != '-')
-                    std::cerr << name << " - Invalid letter: " << keyValue->second.at(0) << std::endl;
+                if (DoCheck && val.at(0) != '-')
+                    std::cerr << name << " - Invalid letter: " << val.at(0) << std::endl;
                 v->remove_piece(pt);
-            }
-            // betza
-            if (is_custom(pt))
-            {
-                if (keyValue->second.size() > 1)
-                {
-                    v->customPiece[pt - CUSTOM_PIECES] = keyValue->second.substr(2);
-                    // Is there an en passant flag in the Betza notation?
-                    if (v->customPiece[pt - CUSTOM_PIECES].find('e') != std::string::npos)
-                    {
-                        v->enPassantTypes[WHITE] |= piece_set(pt);
-                        v->enPassantTypes[BLACK] |= piece_set(pt);
-                    }
-                }
-                else if (DoCheck)
-                    std::cerr << name << " - Missing Betza move notation" << std::endl;
-            }
-            else if (pt == KING)
-            {
-                if (keyValue->second.size() > 1)
-                {
-                    // custom royal piece
-                    v->customPiece[CUSTOM_PIECES_ROYAL - CUSTOM_PIECES] = keyValue->second.substr(2);
-                    v->kingType = CUSTOM_PIECES_ROYAL;
-                }
-                else
-                    v->kingType = KING;
             }
         }
         // mobility region
@@ -403,14 +484,46 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     const auto& it_prom_pt = config.find("promotedPieceType");
     if (it_prom_pt != config.end())
     {
-        char token;
-        size_t idx = 0, idx2 = 0;
+        // Helper: read one piece type identifier (1-char or 2-char) from stream
+        auto readPT = [&v](std::istream& ss) -> PieceType {
+            char c;
+            if (!(ss >> c)) return NO_PIECE_TYPE;
+            // Try 2-char multi-char code first when next char is also alpha
+            if (!v->multiCharPieceMap.empty() && isalpha((unsigned char)c) && isalpha((unsigned char)ss.peek())) {
+                char c2; ss.get(c2);
+                std::string code = {(char)toupper(c), c2};
+                auto it = v->multiCharPieceMap.find(code);
+                if (it == v->multiCharPieceMap.end()) { code[1] = (char)tolower(c2); it = v->multiCharPieceMap.find(code); }
+                if (it != v->multiCharPieceMap.end()) return it->second;
+                ss.putback(c2);
+            }
+            size_t idx = v->pieceToChar.find(toupper(c));
+            return idx != std::string::npos ? PieceType(idx) : NO_PIECE_TYPE;
+        };
+
+        bool valid = true;
         std::stringstream ss(it_prom_pt->second);
-        while (   ss >> token && (idx = v->pieceToChar.find(toupper(token))) != std::string::npos && ss >> token
-               && ss >> token && (idx2 = (token == '-' ? 0 : v->pieceToChar.find(toupper(token)))) != std::string::npos)
-            v->promotedPieceType[idx] = PieceType(idx2);
-        if (DoCheck && (idx == std::string::npos || idx2 == std::string::npos))
-            std::cerr << "promotedPieceType - Invalid piece type: " << token << std::endl;
+        while (!ss.eof())
+        {
+            PieceType from = readPT(ss);
+            if (from == NO_PIECE_TYPE) { valid = false; break; }
+            char sep; if (!(ss >> sep)) { valid = false; break; } // consume ':'
+            // Read to-type (may be '-' meaning no promotion / promoted-only)
+            char c; if (!(ss >> c)) { valid = false; break; }
+            PieceType to;
+            if (c == '-')
+                to = NO_PIECE_TYPE;
+            else {
+                ss.putback(c);
+                to = readPT(ss);
+                if (to == NO_PIECE_TYPE) { valid = false; break; }
+            }
+            v->promotedPieceType[from] = to;
+            if (to != NO_PIECE_TYPE)
+                v->unpromotedPieceType[to] = from;
+        }
+        if (DoCheck && !valid)
+            std::cerr << "promotedPieceType - Invalid piece type in promotion mapping" << std::endl;
     }
     parse_attribute("piecePromotionOnCapture", v->piecePromotionOnCapture);
     parse_attribute("mandatoryPawnPromotion", v->mandatoryPawnPromotion);
@@ -480,6 +593,10 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("wallOrMove", v->wallOrMove);
     parse_attribute("seirawanGating", v->seirawanGating);
     parse_attribute("cambodianMoves", v->cambodianMoves);
+    parse_attribute("lionMoveTypes", v->lionMoveTypes, v->pieceToChar, v->multiCharPieceMap);
+    parse_attribute("lionDogMoveTypes", v->lionDogMoveTypes, v->pieceToChar, v->multiCharPieceMap);
+    parse_attribute("hookMoverTypes", v->hookMoverTypes, v->pieceToChar, v->multiCharPieceMap);
+    parse_attribute("goblinHookTypes", v->goblinHookTypes, v->pieceToChar, v->multiCharPieceMap);
     parse_attribute("diagonalLines", v->diagonalLines);
     parse_attribute("pass", v->pass[WHITE]);
     parse_attribute("pass", v->pass[BLACK]);
@@ -564,6 +681,7 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
         for (PieceSet ps = v->pieceTypes; ps;)
         {
             PieceType pt = pop_lsb(ps);
+            if (!v->pieceMultiChar[pt].empty()) continue; // multi-char piece, skip single-char check
             for (Color c : {WHITE, BLACK})
                 if (std::count(v->pieceToChar.begin(), v->pieceToChar.end(), v->pieceToChar[make_piece(c, pt)]) != 1)
                     std::cerr << piece_name(pt) << " - Ambiguous piece character: " << v->pieceToChar[make_piece(c, pt)] << std::endl;
@@ -644,6 +762,20 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
         }
         if (v->flagPieceSafe && v->blastOnCapture)
             std::cerr << "Can not use flagPieceSafe with blastOnCapture (flagPieceSafe uses simple assessment that does not see blast)." << std::endl;
+    }
+    // For multi-char FEN variants: register any pieces that haven't been registered
+    // in multiCharPieceMap yet (e.g., inherited single-char predefined pieces).
+    if (v->useMultiCharFen) {
+        for (PieceType pt = PAWN; pt < PIECE_TYPE_NB; ++pt) {
+            if (!(v->pieceTypes & pt)) continue;
+            if (!v->pieceMultiChar[pt].empty()) continue; // already registered
+            // Get the char for this piece type (White = uppercase)
+            char c = v->pieceToChar[make_piece(WHITE, pt)];
+            if (c == ' ') continue;
+            std::string code(1, c);
+            v->multiCharPieceMap[code] = pt;
+            v->pieceMultiChar[pt] = code;
+        }
     }
     return v;
 }

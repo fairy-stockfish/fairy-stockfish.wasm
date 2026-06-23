@@ -59,6 +59,7 @@ struct Variant {
   bool sittuyinPromotion = false;
   int promotionLimit[PIECE_TYPE_NB] = {}; // 0 means unlimited
   PieceType promotedPieceType[PIECE_TYPE_NB] = {};
+  PieceType unpromotedPieceType[PIECE_TYPE_NB] = {}; // reverse of promotedPieceType, for '+X' FEN output
   bool piecePromotionOnCapture = false;
   bool mandatoryPawnPromotion = true;
   bool mandatoryPiecePromotion = false;
@@ -110,6 +111,13 @@ struct Variant {
   bool wallOrMove = false;
   bool seirawanGating = false;
   bool cambodianMoves = false;
+  PieceSet lionMoveTypes = NO_PIECE_SET;     // piece types with Chu Shogi lion double-move
+  PieceSet lionDogMoveTypes = NO_PIECE_SET;  // piece types with Dai Dai Shogi lion dog triple-move
+  PieceSet hookMoverTypes = NO_PIECE_SET;    // orthogonal bent rider (Hook Mover): slide orth, turn 90°, slide orth
+  PieceSet goblinHookTypes = NO_PIECE_SET;   // diagonal bent rider (Long Nosed Goblin): slide diag, turn 90°, slide diag
+  bool useMultiCharFen = false;              // enable 2-char piece codes in FEN (e.g., <HM for white Hook Mover)
+  std::map<std::string, PieceType> multiCharPieceMap; // 2-char code -> PieceType
+  std::string pieceMultiChar[PIECE_TYPE_NB] = {};     // PieceType -> 2-char code (empty if single-char)
   Bitboard diagonalLines = 0;
   bool pass[COLOR_NB] = {false, false};
   bool passOnStalemate[COLOR_NB] = {false, false};
@@ -198,6 +206,22 @@ struct Variant {
       add_piece(pt, c, "", c2);
   }
 
+  // Add a piece with a 1- or 2-character FEN code for multi-char FEN mode.
+  // FEN uses <code for white, >code for black (e.g., <HM, >HM, <K, >K).
+  // 1-char codes are also registered in multiCharPieceMap for prefix-FEN lookup.
+  void add_piece(PieceType pt, const std::string& code, const std::string& betza = "") {
+      if (code.size() == 1)
+          add_piece(pt, code[0], betza);
+      else {
+          pieceTypes |= pt;
+          if (is_custom(pt))
+              customPiece[pt - CUSTOM_PIECES] = betza;
+          useMultiCharFen = true;
+      }
+      multiCharPieceMap[code] = pt;
+      pieceMultiChar[pt] = code;
+  }
+
   void remove_piece(PieceType pt) {
       pieceToChar[make_piece(WHITE, pt)] = ' ';
       pieceToChar[make_piece(BLACK, pt)] = ' ';
@@ -207,6 +231,11 @@ struct Variant {
       // erase from promotion types to ensure consistency
       promotionPieceTypes[WHITE] &= ~piece_set(pt);
       promotionPieceTypes[BLACK] &= ~piece_set(pt);
+      // clear multi-char code if set
+      if (!pieceMultiChar[pt].empty()) {
+          multiCharPieceMap.erase(pieceMultiChar[pt]);
+          pieceMultiChar[pt].clear();
+      }
   }
 
   void reset_pieces() {
@@ -216,6 +245,10 @@ struct Variant {
       // clear promotion types to ensure consistency
       promotionPieceTypes[WHITE] = NO_PIECE_SET;
       promotionPieceTypes[BLACK] = NO_PIECE_SET;
+      // clear multi-char state
+      multiCharPieceMap.clear();
+      for (auto& s : pieceMultiChar) s.clear();
+      useMultiCharFen = false;
   }
 
   // Reset values that always need to be redefined
