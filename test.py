@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import faulthandler
+import os
 import unittest
 import pyffish as sf
 
@@ -305,6 +306,11 @@ invalid_variant_positions = {
 
 
 class TestPyffish(unittest.TestCase):
+    def test_typing_metadata(self):
+        package_dir = os.path.dirname(sf.__file__)
+        self.assertTrue(os.path.isfile(os.path.join(package_dir, "__init__.pyi")))
+        self.assertTrue(os.path.isfile(os.path.join(package_dir, "py.typed")))
+
     def test_version(self):
         result = sf.version()
         self.assertEqual(len(result), 3)
