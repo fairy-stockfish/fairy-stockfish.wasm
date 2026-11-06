@@ -863,9 +863,19 @@ Bitboard Position::slider_blockers(Bitboard sliders, Square s, Bitboard& pinners
                  | (attacks_bb<BISHOP>(s) & pieces(c, QUEEN, BISHOP, ARCHBISHOP))) & sliders;
       slidingSnipers = snipers;
   }
+  else if (var->fastAttacks2)
+  {
+      snipers = (  (attacks_bb<  ROOK>(s) & (  pieces(c, ROOK, QUEEN, DRAGON)
+                                             | (pieces(c, LANCE) & PseudoAttacks[~c][LANCE][s])))
+                 | (attacks_bb<BISHOP>(s) & pieces(c, BISHOP, QUEEN, DRAGON_HORSE))) & sliders;
+      // Like the generic path, skip sliders that already attack 's' directly
+      snipers &= ~(attacks_bb<ROOK>(s, pieces()) | attacks_bb<BISHOP>(s, pieces()));
+      slidingSnipers = snipers;
+  }
   else
   {
-      for (PieceSet ps = piece_types(); ps;)
+      // Only piece types with blockable attacks can be snipers
+      for (PieceSet ps = piece_types() & SniperTypes; ps;)
       {
           PieceType pt = pop_lsb(ps);
           Bitboard b = sliders & (PseudoAttacks[~c][pt][s] ^ LeaperAttacks[~c][pt][s]) & pieces(c, pt);
@@ -1284,6 +1294,14 @@ bool Position::legal(Move m) const {
 
   // Return early when without king
   if (!count<KING>(us))
+      return true;
+
+  // When not in check and all pins are known, only a pinned piece can expose the king.
+  // Pinned pieces still need the full test, since leapers can jump over the pinner.
+  if (   var->fastLegal
+      && !checkers()
+      && !(piece_types() & PinUnsafeTypes)
+      && (type_of(m) == DROP || !(blockers_for_king(us) & from)))
       return true;
 
   Bitboard janggiCannons = pieces(JANGGI_CANNON);
@@ -2649,7 +2667,9 @@ bool Position::is_optional_game_end(Value& result, int ply, int countStarted) co
   }
 
   // n-fold repetition
-  if (n_fold_rule())
+  // Without a previous occurrence of the current position (see st->repetition)
+  // only the Janggi move repetition rule can end the game.
+  if (n_fold_rule() && (st->repetition || var->moveRepetitionIllegal))
   {
       int end = captures_to_hand() ? st->pliesFromNull : std::min(st->rule50, st->pliesFromNull);
 
